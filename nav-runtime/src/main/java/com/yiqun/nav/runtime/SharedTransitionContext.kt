@@ -1,11 +1,13 @@
 package com.yiqun.nav.runtime
 
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 
 /**
@@ -27,11 +29,11 @@ val LocalAnimatedVisibilityScope = compositionLocalOf<AnimatedVisibilityScope?> 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun Modifier.sharedElementKey(key: Any): Modifier {
+
     val sharedScope = LocalSharedTransitionScope.current
     val animatedScope = LocalNavAnimatedContentScope.current
 
-
-    return if (sharedScope != null) {
+    return if (sharedScope != null && animatedScope != null) {
         with(sharedScope) {
             this@sharedElementKey.sharedElement(
                 sharedContentState = rememberSharedContentState(key = key),

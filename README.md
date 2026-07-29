@@ -38,7 +38,7 @@
 
 ## 🌟 核心特性
 
-* **官方 Nav 3 原生对接**：直接代理 `androidx.navigation3:1.1.4` 的 `NavDisplay` 与 `NavEntry`，原生享受官方生命周期管理与 ViewModel 自动释放。
+* **官方 Nav 3 原生对接**：直接代理 navigation3`的 `NavDisplay` 与 `NavEntry`，原生享受官方生命周期管理与 ViewModel 自动释放。
 * **双轨制跳转 (Dual-Track Navigation)**：
   * **类型安全轨**：KSP 自动生成 `XxxDestination`，享受 IDE 补全与编译期参数校验。
   * **动态 URL 轨**：支持标准 URL/DeepLink 跨模块跳转（如 `https://domain.com/app/detail?user=...`）。

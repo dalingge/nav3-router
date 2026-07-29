@@ -1,15 +1,19 @@
 package com.yiqun.example
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Alignment.Companion
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.yiqun.example.ui.theme.Nav3routerTheme
 import com.yiqun.nav.annotation.Screen
 import com.yiqun.nav.runtime.NavCenter
 import com.yiqun.nav.runtime.SharedElementTransition
@@ -28,7 +32,11 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 
     val imageUrl = "image_10086"
 
-    Column(modifier = Modifier.padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+    ) {
         Text("首页 (Home)", style = MaterialTheme.typography.headlineMedium)
         Text("收到 Pop 结果: ${result ?: "无"}")
 
@@ -53,14 +61,15 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             contentDescription = null,
             modifier = Modifier
                 .size(50.dp) // 小图
-                .clickable{
+                .clickable {
                     NavCenter.navigate(ImageScreenDestination(imageKey = imageUrl))
                 }
-                // 绑定共享元素 Key
-                .sharedElementKey(key = imageUrl)
+                .align(Alignment.CenterHorizontally)
+                .sharedElementKey(key = imageUrl)   // 绑定共享元素 Key
+
         )
 
-        Text("点击查看大图")
+        Text("点击查看大图", modifier = Modifier.align(Alignment.CenterHorizontally))
 
     }
 }
@@ -109,7 +118,7 @@ fun LoginScreen(redirect: String) {
 
 
 @Composable
-@Screen(route = "app/image",enterTransition = SharedElementTransition::class)
+@Screen(route = "app/image", enterTransition = SharedElementTransition::class)
 fun ImageScreen(imageKey: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Image(
@@ -122,5 +131,15 @@ fun ImageScreen(imageKey: String) {
                 .sharedElementKey(key = imageKey)
         )
         Text("详情页内容")
+    }
+}
+
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Preview(showBackground = true)
+@Composable
+fun HomeScreenPreview() {
+    Nav3routerTheme {
+        HomeScreen()
     }
 }
