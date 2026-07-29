@@ -1,93 +1,321 @@
-# nav3-router
+# Nav3-Router 🚀
 
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10+-7F52FF.svg?logo=kotlin)](https://kotlinlang.org)
+[![Android Navigation 3](https://img.shields.io/badge/Jetpack-Navigation%203-4285F4.svg?logo=android)](https://developer.android.com/jetpack/compose)
+[![KSP](https://img.shields.io/badge/KSP-Supported-brightgreen.svg)](https://kotlinlang.org/docs/ksp-overview.html)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+**Nav3-Router** 是一套基于 **Android 官方 Navigation 3 (`androidx.navigation3`)** 状态驱动引擎打造的新一代轻量级、响应式双轨路由与导航框架。
 
-## Getting started
+它结合了 **KSP 编译期类型安全** 与 **动态 URL 解耦路由**，内置高级栈控制、声明式解耦拦截链、**全局/局部双层转场动画**、**原生共享元素形变转场（Shared Element）**、原生 ViewModel 作用域隔离以及复杂对象 JSON 序列化支持。
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+---
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## 📐 架构设计
 
-## Add your files
-
-* [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
+```text
+┌──────────────────────────────────────────────────────────┐
+│                   App 业务层 (UI & ViewModels)            │
+└────────────────────────────┬─────────────────────────────┘
+                             │ (注解 @Screen & 类型安全/URL 跳转)
+┌────────────────────────────▼─────────────────────────────┐
+│                 Nav3-Router 框架层 (:nav-runtime)        │
+│  - 双轨制路由调度器 (NavCenter)                            │
+│  - 全局/局部双层转场动画 (NavTransition)                   │
+│  - 零侵入共享元素上下文透传 (SharedTransitionScope)         │
+│  - 声明式解耦拦截链 (RouteInterceptor)                     │
+│  - 跨页结果回传总线 (Pop Result API)                      │
+└────────────────────────────┬─────────────────────────────┘
+                             │ (底层代理)
+┌────────────────────────────▼─────────────────────────────┐
+│             Android 官方引擎 (androidx.navigation3)         │
+│  - NavDisplay (三重转场 / 侧滑预测返回 / 多窗格分屏)        │
+│  - NavEntry (官方 ViewModelStoreOwner & 状态恢复)          │
+└──────────────────────────────────────────────────────────┘
 ```
-cd existing_repo
-git remote add origin http://gitlab.yqkj.group/8615501019193/nav3-router.git
-git branch -M main
-git push -uf origin main
+
+---
+
+## 🌟 核心特性
+
+* **官方 Nav 3 原生对接**：直接代理 `androidx.navigation3.NavDisplay` 与 `NavEntry`，原生享受官方生命周期管理与 ViewModel 自动释放。
+* **双轨制跳转 (Dual-Track Navigation)**：
+  * **类型安全轨**：KSP 自动生成 `XxxDestination`，享受 IDE 补全与编译期参数校验。
+  * **动态 URL 轨**：支持标准 URL/DeepLink 跨模块跳转（如 `https://domain.com/app/detail?user=...`）。
+* **灵活的双层转场动画机制**：
+  * **全局默认**：在初始化时配置全局默认动画（如水平滑动/淡入淡出）。
+  * **局部覆盖**：在 `@Screen` 注解中按页面维度单独覆写（如底部弹窗滑入）。
+  * **官方 Nav 3 三重转场对齐**：原生支持 Push (压栈)、Pop (返回) 与 **Android 14+ 侧滑预测性返回 (Predictive Back)**。
+* **零侵入共享元素转场 (Shared Element Transitions)**：基于 `SharedTransitionLayout`，仅需为组件加上 `.sharedElementKey("key")` 即可实现卡片/图片的跨页平滑放大平移形变！
+* **复杂对象自动编解码**：支持 `@Serializable` 自定义数据类作为路由参数，KSP 自动生成 URL 编解码与 JSON 序列化逻辑。
+* **完全解耦的声明式拦截链**：业务层通过 `NavCenter.addGlobalInterceptor()` 注入拦截策略，支持透明重定向。
+* **单元测试友好 (Testable Navigator)**：抽离 `Navigator` 接口，ViewModel 无需依赖 Compose 即可完成纯 Kotlin 单元测试。
+
+---
+
+## 🛠️ 快速集成
+
+### 1. 引入 Gradle 依赖
+
+```kotlin
+plugins {
+    id("com.google.devtools.ksp") version "2.3.10"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.10"
+}
+
+dependencies {
+    // 官方 Navigation 3 依赖
+    implementation("androidx.navigation3:navigation3:1.1.2")
+    
+    // Router 核心依赖
+    implementation(project(":nav-annotation"))
+    implementation(project(":nav-runtime"))
+    ksp(project(":nav-compiler"))
+    
+    // Kotlinx Serialization
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+}
 ```
 
-## Integrate with your tools
+### 2. 初始化路由、转场与拦截器
 
-* [Set up project integrations](http://gitlab.yqkj.group/8615501019193/nav3-router/-/settings/integrations)
+```kotlin
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
 
-## Collaborate with your team
+        // 1. 初始化 KSP 自动生成的路由表
+        initNavRegistry()
 
-* [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+        // 2. 配置全局转场动画 (可配置为 DefaultSlideTransition、FadeTransition 等)
+        NavCenter.setDefaultTransition(DefaultSlideTransition())
 
-## Test and Deploy
+        // 3. 注入业务层自定义全局拦截器
+        NavCenter.addGlobalInterceptor(AppLoginInterceptor())
 
-Use the built-in continuous integration in GitLab.
+        // 4. 设置默认根首页
+        if (NavCenter.primaryStack.backstack.isEmpty()) {
+            NavCenter.navigate(HomeScreenDestination())
+        }
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+        // 5. 绑定 Compose 界面渲染
+        setContent {
+            MaterialTheme {
+                NavCenter.Render()
+            }
+        }
+    }
 
-***
+    override fun onBackPressed() {
+        if (!NavCenter.pop()) {
+            super.onBackPressed()
+        }
+    }
+}
+```
 
-# Editing this README
+---
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## 💡 核心使用指南
 
-## Suggestions for a good README
+### 1. 声明页面与局部转场 `@Screen`
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+可以使用 `@Screen` 的 `enterTransition` 覆写当前页面的专属转场动画（如底部弹窗）：
 
-## Name
-Choose a self-explaining name for your project.
+```kotlin
+@Serializable
+data class UserProfile(val id: Int, val name: String)
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+// 普通页面：未指定 enterTransition，自动降级使用 MainActivity 配置的全局转场动画
+@Composable
+@Screen(route = "app/detail", needLogin = true)
+fun DetailScreen(user: UserProfile) { ... }
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+// 弹窗页面：局部覆盖为 BottomSheetTransition 底部滑入动画
+@Composable
+@Screen(
+    route = "app/bottom_dialog",
+    enterTransition = BottomSheetTransition::class
+)
+fun BottomDialogScreen() { ... }
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+---
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+### 2. 共享元素形变转场 (Shared Element Transitions) 🆕
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+利用框架封装的 `Modifier.sharedElementKey()`，给起点与终点组件绑定相同的 Key 即可实现图片/卡片的无缝跨页放大型变：
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+#### 列表页（起点小图）：
+```kotlin
+@Composable
+@Screen(route = "app/home")
+fun HomeScreen() {
+    val avatarKey = "user_avatar_10086"
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+    Row(modifier = Modifier.clickable {
+        NavCenter.navigate(DetailScreenDestination(avatarKey = avatarKey))
+    }) {
+        Image(
+            painter = painterResource(R.drawable.avatar),
+            contentDescription = null,
+            modifier = Modifier
+                .size(50.dp) // 起点：小图
+                .sharedElementKey(key = avatarKey) // 绑定 Shared Key
+        )
+        Text("点击查看大图")
+    }
+}
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+#### 详情页（终点大图）：
+```kotlin
+@Composable
+@Screen(
+    route = "app/detail",
+    enterTransition = SharedElementTransition::class // 容器淡入，完全交由共享元素做形变
+)
+fun DetailScreen(avatarKey: String) {
+    Column {
+        Image(
+            painter = painterResource(R.drawable.avatar),
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(300.dp) // 终点：大图
+                .sharedElementKey(key = avatarKey) // 绑定相同的 Shared Key
+        )
+        Text("详情页内容")
+    }
+}
+```
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+---
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+### 3. 双轨导航跳转与高级栈控制
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+```kotlin
+// 轨迹 A：强类型跳转（支持复杂对象 & NavOptions 高级栈控制）
+NavCenter.navigate(
+    DetailScreenDestination(user = UserProfile(id = 10086, name = "Aleyn"))
+) {
+    launchSingleTop = true
+    popUpToRoute = "app/home"
+}
 
-## License
-For open source projects, say how it is licensed.
+// 轨迹 B：URL 动态解耦跳转 (适用于 DeepLink / H5 唤起 / 跨模块)
+val userJson = Json.encodeToString(UserProfile(10086, "Aleyn"))
+NavCenter.navigate("https://www.app.cn/app/detail?user=$userJson")
+```
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+---
+
+### 4. App 业务层解耦登录拦截器
+
+```kotlin
+class AppLoginInterceptor : RouteInterceptor {
+    override suspend fun intercept(url: String): InterceptResult {
+        val uri = Uri.parse(url)
+        val path = uri.path?.removePrefix("/") ?: uri.schemeSpecificPart
+        val meta = NavRegistry.getMeta(path)
+
+        if (meta?.needLogin == true && !UserSession.isLoggedIn) {
+            val encodedTarget = URLEncoder.encode(url, "UTF-8")
+            return InterceptResult.Redirect("app/login?redirect=$encodedTarget")
+        }
+
+        return InterceptResult.Proceed
+    }
+}
+
+@Composable
+@Screen(route = "app/login")
+fun LoginScreen(redirect: String) {
+    Button(onClick = {
+        UserSession.isLoggedIn = true
+        NavCenter.pop()
+        if (redirect.isNotEmpty()) {
+            NavCenter.navigate(URLDecoder.decode(redirect, "UTF-8"))
+        }
+    }) {
+        Text("模拟登录成功并原路恢复跳转")
+    }
+}
+```
+
+---
+
+### 5. ViewModel 解耦与纯 Kotlin 单元测试
+
+```kotlin
+class HomeViewModel(private val navigator: Navigator) : ViewModel() {
+    fun openDetail(userId: Int) {
+        navigator.navigate(DetailScreenDestination(user = UserProfile(userId, "Aleyn")))
+    }
+}
+
+// 纯 Kotlin 单元测试 (无需 Android/Robolectric 环境)
+@Test
+fun testOpenDetail() {
+    val fakeNavigator = FakeNavigator()
+    val viewModel = HomeViewModel(fakeNavigator)
+
+    viewModel.openDetail(10086)
+
+    assertEquals("app/detail", fakeNavigator.lastDestination?.route)
+}
+```
+
+---
+
+### 6. 跨页面结果回传 (Result State API)
+
+```kotlin
+// 目标页：出栈并传递结果
+NavCenter.popWithResult("result_key", "Result Data")
+
+// 发起页：响应式监听消费
+@Composable
+@Screen(route = "app/home")
+fun HomeScreen() {
+    val result by NavCenter.getResult<String>("result_key")
+    Text("收到结果: ${result ?: "无"}")
+}
+```
+
+---
+
+## 📖 API 速查表
+
+| API | 功能描述 |
+| :--- | :--- |
+| `NavCenter.navigate(dest, navOptions)` | 强类型跳转（支持 SingleTop / PopUpTo / ClearTask） |
+| `NavCenter.navigate(url, navOptions)` | URL 动态跳转（自动 URL 编解码 & 参数匹配） |
+| `NavCenter.pop()` | 栈顶页面出栈 |
+| `NavCenter.popWithResult(key, value)` | 携带结果出栈 |
+| `NavCenter.getResult<T>(key)` | Composable 内部响应式监听回传结果 |
+| `NavCenter.setDefaultTransition(transition)` | 注册全局默认转场动画（如 `DefaultSlideTransition`） |
+| `Modifier.sharedElementKey(key)` | 为组件绑定共享元素 Key 🆕 |
+| `NavCenter.addGlobalInterceptor(interceptor)` | 动态注册业务层全局路由拦截器 |
+| `NavCenter.Render()` | 官方 Navigation 3 UI 渲染总入口 |
+| `Navigator` | 抽象导航接口，用于 ViewModel 依赖注入与单元测试 |
+
+---
+
+## 📄 License
+
+```text
+Copyright 2024 Nav3-Router Open Source Project
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
