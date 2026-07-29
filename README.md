@@ -1,13 +1,13 @@
 # Nav3-Router 🚀
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10+-7F52FF.svg?logo=kotlin)](https://kotlinlang.org)
-[![Android Navigation 3](https://img.shields.io/badge/Jetpack-Navigation%203-4285F4.svg?logo=android)](https://developer.android.com/jetpack/compose)
-[![KSP](https://img.shields.io/badge/KSP-Supported-brightgreen.svg)](https://kotlinlang.org/docs/ksp-overview.html)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-7F52FF.svg?logo=kotlin)](https://kotlinlang.org)
+[![Android Navigation 3](https://img.shields.io/badge/Jetpack-Navigation%203%20v1.1.4-4285F4.svg?logo=android)](https://developer.android.com/jetpack/compose)
+[![KSP](https://img.shields.io/badge/KSP-2.3.10-brightgreen.svg)](https://kotlinlang.org/docs/ksp-overview.html)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**Nav3-Router** 是一套基于 **Android 官方 Navigation 3 (`androidx.navigation3`)** 状态驱动引擎打造的新一代轻量级、响应式双轨路由与导航框架。
+**Nav3-Router** 是一套基于 **Android 官方 Navigation 3 (`androidx.navigation3:1.1.4`)** 状态驱动引擎打造的新一代轻量级、响应式双轨路由与导航框架。
 
-它结合了 **KSP 编译期类型安全** 与 **动态 URL 解耦路由**，内置高级栈控制、声明式解耦拦截链、**全局/局部双层转场动画**、**原生共享元素形变转场（Shared Element）**、原生 ViewModel 作用域隔离以及复杂对象 JSON 序列化支持。
+它融合了 **KSP 编译期类型安全** 与 **动态 URL 解耦路由**，内置高级栈控制、声明式解耦拦截链、**全局/局部双层转场动画**、**原生共享元素形变转场（Shared Element）**、原生 ViewModel 作用域隔离以及复杂对象 JSON 序列化支持。
 
 ---
 
@@ -38,7 +38,7 @@
 
 ## 🌟 核心特性
 
-* **官方 Nav 3 原生对接**：直接代理 `androidx.navigation3.NavDisplay` 与 `NavEntry`，原生享受官方生命周期管理与 ViewModel 自动释放。
+* **官方 Nav 3 原生对接**：直接代理 `androidx.navigation3:1.1.4` 的 `NavDisplay` 与 `NavEntry`，原生享受官方生命周期管理与 ViewModel 自动释放。
 * **双轨制跳转 (Dual-Track Navigation)**：
   * **类型安全轨**：KSP 自动生成 `XxxDestination`，享受 IDE 补全与编译期参数校验。
   * **动态 URL 轨**：支持标准 URL/DeepLink 跨模块跳转（如 `https://domain.com/app/detail?user=...`）。
@@ -53,26 +53,44 @@
 
 ---
 
+## 📌 @Screen 路由命名规范
+
+在 `@Screen(route = "...")` 中，`route` 是页面的全局唯一路径标识符，请严格遵循以下 5 大规范：
+
+| 规范 | 规则说明 | ✅ 正确示例 | ❌ 错误示例 |
+| :--- | :--- | :--- | :--- |
+| **1. 纯 Path 格式** | 绝不包含 Query 参数（参数由跳转动态拼接） | `@Screen(route = "app/detail")` | `@Screen(route = "app/detail?id={id}")` |
+| **2. 模块化双层路径** | 推荐采用 `[module]/[screen]` 避免跨模块冲突 | `@Screen(route = "shop/cart")` | `@Screen(route = "cart")` |
+| **3. 开头不带 `/`** | 统一省略开头的斜杠，提高路由表匹配效率 | `@Screen(route = "user/login")` | `@Screen(route = "/user/login")` |
+| **4. 全小写蛇形命名** | 遵循标准 URL 协议格式，防止大小写误匹配 | `@Screen(route = "shop/order_detail")` | `@Screen(route = "Shop/OrderDetail")` |
+| **5. 全局唯一性** | 同一个 App 内路径必须唯一，后注册者会覆盖前者 | 全局唯一 Path | 多个页面配置相同 route |
+
+---
+
 ## 🛠️ 快速集成
 
 ### 1. 引入 Gradle 依赖
 
+在项目 `build.gradle.kts` 中添加环境依赖版本：
+
 ```kotlin
 plugins {
+    // KSP 插件版本
     id("com.google.devtools.ksp") version "2.3.10"
+    // Kotlin Serialization 插件版本
     id("org.jetbrains.kotlin.plugin.serialization") version "2.4.10"
 }
 
 dependencies {
-    // 官方 Navigation 3 依赖
-    implementation("androidx.navigation3:navigation3:1.1.2")
+    // 官方 Navigation 3 核心库
+    implementation("androidx.navigation3:navigation3:1.1.4")
     
-    // Router 核心依赖
+    // Router 核心模块
     implementation(project(":nav-annotation"))
     implementation(project(":nav-runtime"))
     ksp(project(":nav-compiler"))
     
-    // Kotlinx Serialization
+    // Kotlinx Serialization JSON 编解码库
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 }
 ```
@@ -142,7 +160,7 @@ fun BottomDialogScreen() { ... }
 
 ---
 
-### 2. 共享元素形变转场 (Shared Element Transitions) 🆕
+### 2. 共享元素形变转场 (Shared Element Transitions)
 
 利用框架封装的 `Modifier.sharedElementKey()`，给起点与终点组件绑定相同的 Key 即可实现图片/卡片的无缝跨页放大型变：
 
@@ -295,7 +313,7 @@ fun HomeScreen() {
 | `NavCenter.popWithResult(key, value)` | 携带结果出栈 |
 | `NavCenter.getResult<T>(key)` | Composable 内部响应式监听回传结果 |
 | `NavCenter.setDefaultTransition(transition)` | 注册全局默认转场动画（如 `DefaultSlideTransition`） |
-| `Modifier.sharedElementKey(key)` | 为组件绑定共享元素 Key 🆕 |
+| `Modifier.sharedElementKey(key)` | 为组件绑定共享元素 Key |
 | `NavCenter.addGlobalInterceptor(interceptor)` | 动态注册业务层全局路由拦截器 |
 | `NavCenter.Render()` | 官方 Navigation 3 UI 渲染总入口 |
 | `Navigator` | 抽象导航接口，用于 ViewModel 依赖注入与单元测试 |
@@ -318,4 +336,5 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+```
 ```
