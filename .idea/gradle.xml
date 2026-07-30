@@ -13,6 +13,7 @@
             <option value="$PROJECT_DIR$/nav-annotation" />
             <option value="$PROJECT_DIR$/nav-compiler" />
             <option value="$PROJECT_DIR$/nav-runtime" />
+            <option value="$PROJECT_DIR$/user" />
           </set>
         </option>
       </GradleProjectSettings>
