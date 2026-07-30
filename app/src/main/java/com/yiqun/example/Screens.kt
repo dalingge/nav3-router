@@ -56,6 +56,14 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        Button(onClick = {
+            NavCenter.navigate( "https://www.app.cn/app/user")
+        }) {
+            Text("URL 动态跳转 其他模块-> 用户页")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         Image(
             painter = painterResource(R.mipmap.image),
             contentDescription = null,

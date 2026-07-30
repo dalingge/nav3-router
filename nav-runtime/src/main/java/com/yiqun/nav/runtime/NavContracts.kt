@@ -47,8 +47,8 @@ class NavOptionsBuilder {
  * 解耦导航接口（用于 ViewModel 单元测试）
  */
 interface Navigator {
-    fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)? = null)
-    fun navigate(url: String, builder: (NavOptionsBuilder.() -> Unit)? = null)
+    fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)? = null): NavCenter
+    fun navigate(url: String, builder: (NavOptionsBuilder.() -> Unit)? = null): NavCenter
     fun pop(): Boolean
     fun <T> popWithResult(key: String, result: T)
 }

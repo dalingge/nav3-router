@@ -15,36 +15,76 @@ import com.squareup.kotlinpoet.ksp.writeTo
 
 class NavSymbolProcessor(
     private val codeGenerator: CodeGenerator,
-    private val logger: KSPLogger
+    private val logger: KSPLogger, // KSP 日志记录器
+    private val options: Map<String, String> // KSP 环境变量选项
 ) : SymbolProcessor {
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         val symbols = resolver.getSymbolsWithAnnotation("com.yiqun.nav.annotation.Screen")
             .filterIsInstance<KSFunctionDeclaration>()
+            .toList()
 
-        if (!symbols.iterator().hasNext()) return emptyList()
+        if (symbols.isEmpty()) {
+            return emptyList()
+        }
+
+        logger.info("==================== NavSymbolProcessor Start ====================")
+        logger.info("Found ${symbols.size} @Screen annotated composable functions.")
+
+        //  自动模块名识别逻辑：优先读取 Gradle arg，若无则自动根据 Package 解析
+        val moduleNameFromPkg = symbols.firstOrNull()?.packageName?.asString()
+            ?.split(".")
+            ?.dropLast(1)
+            ?.lastOrNull() ?: ""
+
+        val rawModuleName = options["NAV_MODULE_NAME"] ?: moduleNameFromPkg
+        val capitalizedModuleName = rawModuleName.replaceFirstChar { it.uppercase() }
+
+        val initFuncName = if (capitalizedModuleName.isNotEmpty()) "init${capitalizedModuleName}" else "initNavRegistry"
+        val fileName = if (capitalizedModuleName.isNotEmpty()) "${capitalizedModuleName}NavRegistryInit" else "NavRegistryInit"
+
+        logger.info("Target Module -> '$capitalizedModuleName' | Function -> NavCenter.$initFuncName() | File -> $fileName.kt")
+
+        // 收集增量源文件依赖，防止 build 目录清理后丢失
+        val sourceFiles = symbols.mapNotNull { it.containingFile }.toTypedArray()
+        val dependencies = Dependencies(aggregating = true, *sourceFiles)
 
         val registryInitBlock = CodeBlock.builder()
 
         symbols.forEach { function ->
             val annotation = function.annotations.firstOrNull { it.shortName.asString() == "Screen" } ?: return@forEach
+
             val route = annotation.arguments.firstOrNull { it.name?.asString() == "route" }?.value as? String ?: ""
             val needLogin = annotation.arguments.firstOrNull { it.name?.asString() == "needLogin" }?.value as? Boolean ?: false
+
+            if (route.isEmpty()) {
+                logger.error("Route path cannot be empty on function: ${function.simpleName.asString()}", function)
+                return@forEach
+            }
 
             val functionName = function.simpleName.asString()
             val packageName = function.packageName.asString()
             val destClassName = "${functionName}Destination"
 
+            logger.info("Processing Screen: route = '$route' -> $packageName.$destClassName")
+
+            // 过滤提取路由参数（排除带有默认值的 ViewModel 和 Navigator）
             val routeParams = function.parameters.filter { param ->
                 val typeName = param.type.toTypeName().toString()
                 !param.hasDefault && typeName != "com.yiqun.nav.runtime.Navigator"
             }
 
-            generateDestinationClass(packageName, destClassName, route, routeParams)
+            // 生成 Destination 强类型数据类
+            generateDestinationClass(packageName, destClassName, route, routeParams, dependencies)
+
+            // 拼接代码块
             buildRegistryStatement(registryInitBlock, packageName, destClassName, route, needLogin, function, routeParams, annotation)
         }
 
-        generateRegistryFile(registryInitBlock.build())
+        // 生成模块注册表初始化文件
+        generateRegistryFile(fileName, initFuncName, registryInitBlock.build(), dependencies)
+
+        logger.info("==================== NavSymbolProcessor Finish ====================")
         return emptyList()
     }
 
@@ -52,7 +92,8 @@ class NavSymbolProcessor(
         packageName: String,
         className: String,
         route: String,
-        routeParams: List<KSValueParameter>
+        routeParams: List<KSValueParameter>,
+        dependencies: Dependencies
     ) {
         val classBuilder = TypeSpec.classBuilder(className)
             .addSuperinterface(ClassName("com.yiqun.nav.runtime", "NavDestination"))
@@ -60,6 +101,7 @@ class NavSymbolProcessor(
         val primaryConstructor = FunSpec.constructorBuilder()
 
         if (routeParams.isEmpty()) {
+            // 无参生成普通 class (避免 Kotlin data class 无参编译错误)
             classBuilder.addProperty(
                 PropertySpec.builder("route", String::class, KModifier.OVERRIDE).initializer("%S", route).build()
             )
@@ -71,7 +113,6 @@ class NavSymbolProcessor(
         } else {
             classBuilder.addModifiers(KModifier.DATA)
 
-            // 构建原生的 return "app/detail?user=${...}" 动态字符串语句
             val toUrlCode = StringBuilder("return \"$route?")
             routeParams.forEach { param ->
                 val name = param.name!!.asString()
@@ -87,14 +128,13 @@ class NavSymbolProcessor(
                 }
             }
 
-            // 去掉末尾多余的 & 符号，并闭合字符串双引号
             val finalToUrlStatement = toUrlCode.toString().dropLast(1) + "\""
 
             classBuilder.addProperty(
                 PropertySpec.builder("route", String::class, KModifier.OVERRIDE).initializer("%S", route).build()
             )
 
-            //  核心修复：将 %S 改为 %L，让 KotlinPoet 输出原生求值代码表达式
+            // 使用 %L 输出原生 Kotlin 运行时求值表达式
             classBuilder.addFunction(
                 FunSpec.builder("toUrl").addModifiers(KModifier.OVERRIDE).returns(String::class)
                     .addStatement("%L", finalToUrlStatement)
@@ -104,7 +144,12 @@ class NavSymbolProcessor(
             classBuilder.primaryConstructor(primaryConstructor.build())
         }
 
-        FileSpec.builder(packageName, className).addType(classBuilder.build()).build().writeTo(codeGenerator, false)
+        FileSpec.builder(packageName, className)
+            .addType(classBuilder.build())
+            .build()
+            .writeTo(codeGenerator, dependencies)
+
+        logger.logging("Generated Destination Class: $packageName.$className")
     }
 
     private fun buildRegistryStatement(
@@ -127,7 +172,7 @@ class NavSymbolProcessor(
         block.addStatement("route = %S,", route)
         block.addStatement("needLogin = $needLogin,")
 
-        // Factory 构建 (已修正：params[key] 原生已解码，无需二次 URLDecoder)
+        // Factory 构建
         block.addStatement("factory = { params ->")
         block.indent()
 
@@ -168,6 +213,7 @@ class NavSymbolProcessor(
         block.unindent()
         block.addStatement("},")
 
+        // 解析局部拦截器
         val interceptorsArg = annotation.arguments.firstOrNull { it.name?.asString() == "interceptors" }
         @Suppress("UNCHECKED_CAST")
         val interceptorTypes = (interceptorsArg?.value as? List<*>)?.mapNotNull { it as? KSType } ?: emptyList()
@@ -181,14 +227,15 @@ class NavSymbolProcessor(
             block.addStatement("interceptors = listOf($instances),")
         }
 
+        // 解析局部转场动画
         val transitionArg = annotation.arguments.firstOrNull { it.name?.asString() == "enterTransition" }
         val transitionType = transitionArg?.value as? KSType
         val transitionClassName = transitionType?.declaration?.qualifiedName?.asString()
-        // 如果未配置或配置的是 UnspecifiedTransition，则传 null（降级使用全局动画）
+
         if (transitionClassName == null || transitionClassName.contains("UnspecifiedTransition")) {
             block.addStatement("transition = null")
         } else {
-            block.addStatement("transition = %L(),", transitionClassName)
+            block.addStatement("transition = %L()", transitionClassName)
         }
 
         block.unindent()
@@ -197,13 +244,26 @@ class NavSymbolProcessor(
         block.addStatement(")")
     }
 
-    private fun generateRegistryFile(initBlock: CodeBlock) {
-        FileSpec.builder("com.yiqun.nav.generated", "NavRegistryInit")
-            .addFunction(FunSpec.builder("initNavRegistry").addCode(initBlock).build())
-            .build().writeTo(codeGenerator, false)
-    }
-}
+    private fun generateRegistryFile(
+        fileName: String,
+        funcName: String,
+        initBlock: CodeBlock,
+        dependencies: Dependencies
+    ) {
+        val navCenterClassName = ClassName("com.yiqun.nav.runtime", "NavCenter")
 
-class NavProcessorProvider : SymbolProcessorProvider {
-    override fun create(env: SymbolProcessorEnvironment) = NavSymbolProcessor(env.codeGenerator, env.logger)
+        FileSpec.builder("com.yiqun.nav.generated", fileName)
+            .addFunction(
+                FunSpec.builder(funcName)
+                    .receiver(navCenterClassName) // 扩展函数：NavCenter.initXxx()
+                    .returns(navCenterClassName)  // 支持链式调用：return this
+                    .addCode(initBlock)
+                    .addStatement("return this")
+                    .build()
+            )
+            .build()
+            .writeTo(codeGenerator, dependencies)
+
+        logger.info("Successfully generated Init Registry: com.yiqun.nav.generated.$fileName.kt -> fun NavCenter.$funcName()")
+    }
 }

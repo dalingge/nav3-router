@@ -7,7 +7,7 @@
 
 **Nav3-Router** 是一套基于 **Android 官方 Navigation 3 (`androidx.navigation3:1.1.4`)** 状态驱动引擎打造的新一代轻量级、响应式双轨路由与导航框架。
 
-它融合了 **KSP 编译期类型安全** 与 **动态 URL 解耦路由**，内置高级栈控制、声明式解耦拦截链、**全局/局部双层转场动画**、**原生共享元素形变转场（Shared Element）**、原生 ViewModel 作用域隔离以及复杂对象 JSON 序列化支持。
+它融合了 **KSP 编译期类型安全** 与 **动态 URL 解耦路由**，内置高级栈控制、声明式解耦拦截链、**全局/局部双层转场动画**、**原生共享元素形变转场（Shared Element）**、**NavEntryDecorator 装饰器体系**（自动状态恢复 + 原生 ViewModel 作用域隔离）以及复杂对象 JSON 序列化支持。
 
 ---
 
@@ -17,20 +17,21 @@
 ┌──────────────────────────────────────────────────────────┐
 │                   App 业务层 (UI & ViewModels)            │
 └────────────────────────────┬─────────────────────────────┘
-                             │ (注解 @Screen & 类型安全/URL 跳转)
+                             │ (流式 DSL 链式初始化 & 双轨跳转)
 ┌────────────────────────────▼─────────────────────────────┐
 │                 Nav3-Router 框架层 (:nav-runtime)        │
-│  - 双轨制路由调度器 (NavCenter)                            │
-│  - 全局/局部双层转场动画 (NavTransition)                   │
+│  - 极简链式配置总线 (NavCenter)                            │
+│  - 多模块 KSP 包名自动解析扩展 (initUser / initShop)        │
+│  - 装饰器洋葱皮体系 (NavEntryDecorator & onPop 清理)       │
+│  - 三重转场 (Push / Pop / Predictive Back 侧滑预测)        │
 │  - 零侵入共享元素上下文透传 (SharedTransitionScope)         │
 │  - 声明式解耦拦截链 (RouteInterceptor)                     │
-│  - 跨页结果回传总线 (Pop Result API)                      │
 └────────────────────────────┬─────────────────────────────┘
                              │ (底层代理)
 ┌────────────────────────────▼─────────────────────────────┐
 │             Android 官方引擎 (androidx.navigation3)         │
-│  - NavDisplay (三重转场 / 侧滑预测返回 / 多窗格分屏)        │
-│  - NavEntry (官方 ViewModelStoreOwner & 状态恢复)          │
+│  - NavDisplay (场景渲染 / 多窗格分屏 / 状态自动恢复)         │
+│  - NavEntry (官方 ViewModelStoreOwner & 状态持久化)        │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -38,7 +39,13 @@
 
 ## 🌟 核心特性
 
-* **官方 Nav 3 原生对接**：直接代理 navigation3`的 `NavDisplay` 与 `NavEntry`，原生享受官方生命周期管理与 ViewModel 自动释放。
+* **官方 Nav 3 原生对接**：直接代理 `androidx.navigation3:1.1.4` 的 `NavDisplay` 与 `NavEntry`，原生享受官方生命周期管理与 ViewModel 自动释放。
+* **极致流式 DSL 初始化**：通过 `NavCenter` 链式调用一次性搞定动画配置、拦截器注册、多模块路由加载与首页压栈。
+* **零配置多模块架构**：KSP 自动分析子模块包名生成唯一扩展函数（如 `NavCenter.initUser()`），无同名冲突，**0 行 Gradle 配置**！
+* **`NavEntryDecorator` 装饰器洋葱皮体系**：
+  * **底层自动置顶**：强制保留官方 `rememberSaveableStateHolderNavEntryDecorator`，确保 TextField 输入框与列表滚动位置永远不丢失。
+  * **ViewModel 隔离**：原生集成 `lifecycle-viewmodel-navigation3` 的 `rememberViewModelStoreNavEntryDecorator()`，页面出栈自动触发 `onCleared()`。
+  * **自定义扩展**：支持实现 `NavEntryDecorator(onPop = { ... }, decorate = { ... })` 实现自动化页面曝光埋点与内存清理。
 * **双轨制跳转 (Dual-Track Navigation)**：
   * **类型安全轨**：KSP 自动生成 `XxxDestination`，享受 IDE 补全与编译期参数校验。
   * **动态 URL 轨**：支持标准 URL/DeepLink 跨模块跳转（如 `https://domain.com/app/detail?user=...`）。
@@ -46,9 +53,7 @@
   * **全局默认**：在初始化时配置全局默认动画（如水平滑动/淡入淡出）。
   * **局部覆盖**：在 `@Screen` 注解中按页面维度单独覆写（如底部弹窗滑入）。
   * **官方 Nav 3 三重转场对齐**：原生支持 Push (压栈)、Pop (返回) 与 **Android 14+ 侧滑预测性返回 (Predictive Back)**。
-* **零侵入共享元素转场 (Shared Element Transitions)**：基于 `SharedTransitionLayout`，仅需为组件加上 `.sharedElementKey("key")` 即可实现卡片/图片的跨页平滑放大平移形变！
-* **复杂对象自动编解码**：支持 `@Serializable` 自定义数据类作为路由参数，KSP 自动生成 URL 编解码与 JSON 序列化逻辑。
-* **完全解耦的声明式拦截链**：业务层通过 `NavCenter.addGlobalInterceptor()` 注入拦截策略，支持透明重定向。
+* **零侵入共享元素转场 (Shared Element Transitions)**：基于 `SharedTransitionLayout`，仅需给组件加上 `.sharedElementKey("key")` 即可实现卡片/图片的跨页平滑放大平移形变！
 * **单元测试友好 (Testable Navigator)**：抽离 `Navigator` 接口，ViewModel 无需依赖 Compose 即可完成纯 Kotlin 单元测试。
 
 ---
@@ -71,52 +76,47 @@
 
 ### 1. 引入 Gradle 依赖
 
-在项目 `build.gradle.kts` 中添加环境依赖版本：
-
 ```kotlin
 plugins {
-    // KSP 插件版本
     id("com.google.devtools.ksp") version "2.3.10"
-    // Kotlin Serialization 插件版本
     id("org.jetbrains.kotlin.plugin.serialization") version "2.4.10"
 }
 
 dependencies {
     // 官方 Navigation 3 核心库
     implementation("androidx.navigation3:navigation3:1.1.4")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:1.1.4")
     
     // Router 核心模块
     implementation(project(":nav-annotation"))
     implementation(project(":nav-runtime"))
     ksp(project(":nav-compiler"))
     
-    // Kotlinx Serialization JSON 编解码库
+    // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 }
 ```
 
-### 2. 初始化路由、转场与拦截器
+### 2. 极简流式 DSL 初始化
+
+在 `MainActivity` 中通过 `NavCenter` 链式 API 完成所有配置：
 
 ```kotlin
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. 初始化 KSP 自动生成的路由表
-        initNavRegistry()
+        // 像 DSL 一样极简、流畅地链式初始化整个 App！
+        NavCenter
+            .addEntryDecorator { rememberViewModelStoreNavEntryDecorator() } // 1. 注入官方 ViewModel 作用域隔离
+            .addEntryDecorator(AnalyticsEntryDecorator())                   // 2. 注入自定义全埋点与 onPop 清理
+            .setDefaultTransition(DefaultSlideTransition())                  // 3. 配置全局转场动画
+            .addGlobalInterceptor(AppLoginInterceptor())                    // 4. 注册全局登录拦截器
+            .initUser()                                                     // 5. 自动加载 :feature-user 模块路由
+            .initShop()                                                     // 6. 自动加载 :feature-shop 模块路由
+            .initApp()                                                      // 7. 自动加载 :app 模块路由
+            .navigate(HomeScreenDestination())                               // 8. 压入根首页
 
-        // 2. 配置全局转场动画 (可配置为 DefaultSlideTransition、FadeTransition 等)
-        NavCenter.setDefaultTransition(DefaultSlideTransition())
-
-        // 3. 注入业务层自定义全局拦截器
-        NavCenter.addGlobalInterceptor(AppLoginInterceptor())
-
-        // 4. 设置默认根首页
-        if (NavCenter.primaryStack.backstack.isEmpty()) {
-            NavCenter.navigate(HomeScreenDestination())
-        }
-
-        // 5. 绑定 Compose 界面渲染
         setContent {
             MaterialTheme {
                 NavCenter.Render()
@@ -160,7 +160,35 @@ fun BottomDialogScreen() { ... }
 
 ---
 
-### 2. 共享元素形变转场 (Shared Element Transitions)
+### 2. 自定义 `NavEntryDecorator` 与 `onPop` 清理
+
+继承官方 `NavEntryDecorator`，利用 `onPop` 回调与 `entry.Content()` 实现页面级的全埋点曝光与内存释放：
+
+```kotlin
+class AnalyticsEntryDecorator : NavEntryDecorator<NavDestination>(
+    // 1. 当页面 Pop 出栈且彻底离开 Composition 时触发，进行资源清理
+    onPop = { contentKey ->
+        println("📊 [页面 Pop 出栈] 彻底清理 contentKey = $contentKey 的缓存数据")
+    },
+    // 2. 装饰闭包：渲染页面 UI
+    decorate = { entry ->
+        val destination = entry.metadata["destination"] as? NavDestination
+
+        LaunchedEffect(destination) {
+            if (destination != null) {
+                println("📊 [页面曝光] route = ${destination.route}")
+            }
+        }
+
+        // 核心：调用官方 entry.Content() 渲染页面！
+        entry.Content()
+    }
+)
+```
+
+---
+
+### 3. 共享元素形变转场 (Shared Element Transitions)
 
 利用框架封装的 `Modifier.sharedElementKey()`，给起点与终点组件绑定相同的 Key 即可实现图片/卡片的无缝跨页放大型变：
 
@@ -210,7 +238,7 @@ fun DetailScreen(avatarKey: String) {
 
 ---
 
-### 3. 双轨导航跳转与高级栈控制
+### 4. 双轨导航跳转与高级栈控制
 
 ```kotlin
 // 轨迹 A：强类型跳转（支持复杂对象 & NavOptions 高级栈控制）
@@ -228,7 +256,7 @@ NavCenter.navigate("https://www.app.cn/app/detail?user=$userJson")
 
 ---
 
-### 4. App 业务层解耦登录拦截器
+### 5. App 业务层解耦登录拦截器
 
 ```kotlin
 class AppLoginInterceptor : RouteInterceptor {
@@ -263,7 +291,7 @@ fun LoginScreen(redirect: String) {
 
 ---
 
-### 5. ViewModel 解耦与纯 Kotlin 单元测试
+### 6. ViewModel 解耦与纯 Kotlin 单元测试
 
 ```kotlin
 class HomeViewModel(private val navigator: Navigator) : ViewModel() {
@@ -286,7 +314,7 @@ fun testOpenDetail() {
 
 ---
 
-### 6. 跨页面结果回传 (Result State API)
+### 7. 跨页面结果回传 (Result State API)
 
 ```kotlin
 // 目标页：出栈并传递结果
@@ -307,16 +335,17 @@ fun HomeScreen() {
 
 | API | 功能描述 |
 | :--- | :--- |
-| `NavCenter.navigate(dest, navOptions)` | 强类型跳转（支持 SingleTop / PopUpTo / ClearTask） |
-| `NavCenter.navigate(url, navOptions)` | URL 动态跳转（自动 URL 编解码 & 参数匹配） |
+| `NavCenter.navigate(dest, navOptions)` | 强类型跳转（支持 SingleTop / PopUpTo / ClearTask），支持链式调用 |
+| `NavCenter.navigate(url, navOptions)` | URL 动态跳转（自动 URL 编解码 & 参数匹配），支持链式调用 |
+| `NavCenter.addEntryDecorator(decorator)` | 动态注入页面 Decorator（如 `rememberViewModelStoreNavEntryDecorator`） |
+| `NavCenter.setDefaultTransition(transition)` | 注册全局默认转场动画（如 `DefaultSlideTransition`） |
+| `NavCenter.addGlobalInterceptor(interceptor)` | 动态注册业务层全局路由拦截器 |
+| `NavCenter.initXxx()` | 多模块 KSP 自动生成的流式路由初始化扩展函数 |
+| `Modifier.sharedElementKey(key)` | 为组件绑定共享元素 Key |
 | `NavCenter.pop()` | 栈顶页面出栈 |
 | `NavCenter.popWithResult(key, value)` | 携带结果出栈 |
 | `NavCenter.getResult<T>(key)` | Composable 内部响应式监听回传结果 |
-| `NavCenter.setDefaultTransition(transition)` | 注册全局默认转场动画（如 `DefaultSlideTransition`） |
-| `Modifier.sharedElementKey(key)` | 为组件绑定共享元素 Key |
-| `NavCenter.addGlobalInterceptor(interceptor)` | 动态注册业务层全局路由拦截器 |
 | `NavCenter.Render()` | 官方 Navigation 3 UI 渲染总入口 |
-| `Navigator` | 抽象导航接口，用于 ViewModel 依赖注入与单元测试 |
 
 ---
 

@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import androidx.core.net.toUri
 import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 
@@ -37,13 +38,13 @@ object NavCenter : Navigator {
     private val scope = CoroutineScope(Dispatchers.Main)
     val primaryStack = NavStack("GlobalPrimary")
     private val resultStore = mutableStateMapOf<String, Any?>()
-
     /** 全局默认转场动画 */
     private var globalTransition: NavTransition = DefaultSlideTransition()
 
     /** 在 Activity / Application 中全局设置转场动画 */
-    fun setDefaultTransition(transition: NavTransition) {
+    fun setDefaultTransition(transition: NavTransition): NavCenter {
         this.globalTransition = transition
+        return this
     }
 
     fun getGlobalTransition(): NavTransition = globalTransition
@@ -51,15 +52,37 @@ object NavCenter : Navigator {
     /** 业务层全局拦截器链 */
     private val globalInterceptors = mutableListOf<RouteInterceptor>()
 
-    fun addGlobalInterceptor(interceptor: RouteInterceptor) {
+    fun addGlobalInterceptor(interceptor: RouteInterceptor): NavCenter {
         globalInterceptors.add(interceptor)
+        return this
     }
 
-    override fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)?) {
-        navigate(destination.toUrl(), builder)
+    // 支持存储 @Composable 组合函数闭包
+    private val decoratorFactories = mutableListOf<@Composable () -> NavEntryDecorator<NavDestination>>()
+
+    /** 链式注册普通静态 NavEntryDecorator 实例 */
+    fun addEntryDecorator(decorator: NavEntryDecorator<NavDestination>): NavCenter {
+        decoratorFactories.add { decorator }
+        return this
     }
 
-    override fun navigate(url: String, builder: (NavOptionsBuilder.() -> Unit)?) {
+    /** 链式注册 @Composable 工厂闭包 (专门支持官方 rememberViewModelStoreNavEntryDecorator) */
+    fun addEntryDecorator(factory: @Composable () -> NavEntryDecorator<NavDestination>): NavCenter {
+        decoratorFactories.add(factory)
+        return this
+    }
+
+    /** 在 Render 时动态求值获取所有 Decorator 实例 */
+    @Composable
+    fun getDecorators(): List<NavEntryDecorator<NavDestination>> {
+        return decoratorFactories.map { it.invoke() }
+    }
+
+    override fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)?): NavCenter {
+       return navigate(destination.toUrl(), builder)
+    }
+
+    override fun navigate(url: String, builder: (NavOptionsBuilder.() -> Unit)?) : NavCenter{
         val options = NavOptionsBuilder().apply(builder ?: {}).build()
 
         scope.launch {
@@ -118,6 +141,8 @@ object NavCenter : Navigator {
 
             backstack.add(destination)
         }
+
+        return this
     }
 
     override fun pop(): Boolean {
@@ -164,6 +189,11 @@ fun NavHostContainer(stack: NavStack) {
         return
     }
 
+    // 获取官方原生的 UI 状态恢复装饰器 (处理 rememberSaveable、TextField 输入框、列表滚动位置保留)
+    val saveableDecorator = rememberSaveableStateHolderNavEntryDecorator<NavDestination>()
+    //  官方 Saveable 装饰器 (必须置顶) + 用户链式添加的所有 Decorators
+    val allDecorators = listOf(saveableDecorator) + NavCenter.getDecorators()
+
     // 最外层包裹官方 SharedTransitionLayout
     SharedTransitionLayout {
 
@@ -172,10 +202,7 @@ fun NavHostContainer(stack: NavStack) {
             NavDisplay(
                 backStack = stack.backstack,
                 onBack = { NavCenter.pop() },
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    //rememberViewModelStoreNavEntryDecorator(),
-                ),
+                entryDecorators = allDecorators,
                 sharedTransitionScope = this,
                 transitionSpec = { //使用此辅助函数定义向前导航动画
                     val transition = targetState.metadata["transition"] as? NavTransition ?: NavCenter.getGlobalTransition()
