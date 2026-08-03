@@ -3,8 +3,6 @@ package com.yiqun.nav.runtime
 import androidx.compose.animation.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
-import com.yiqun.nav.annotation.InterceptResult
-import com.yiqun.nav.annotation.RouteInterceptor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -13,6 +11,8 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  *
@@ -38,8 +38,27 @@ object NavCenter : Navigator {
     private val scope = CoroutineScope(Dispatchers.Main)
     val primaryStack = NavStack("GlobalPrimary")
     private val resultStore = mutableStateMapOf<String, Any?>()
+
     /** 全局默认转场动画 */
     private var globalTransition: NavTransition = DefaultSlideTransition()
+    /** 业务层全局拦截器链 */
+    private val globalInterceptors = mutableListOf<RouteInterceptor>()
+    // 支持存储 @Composable 组合函数闭包
+    private val decoratorFactories = mutableListOf<@Composable () -> NavEntryDecorator<NavDestination>>()
+    // 链式 Handler 责任链
+    private val routeHandlers = mutableListOf<RouteHandler>()
+
+    // 404 容错降级路由 Path（例如 "app/not_found"）
+    private var fallbackRoute: String? = null
+
+    // 协程并发互斥锁：防止短时间内多次快速调用 navigate 导致状态错乱与闪退
+    private val navigateMutex = Mutex()
+
+    /** 设置 404 容错降级路由 */
+    fun setFallbackRoute(route: String): NavCenter {
+        this.fallbackRoute = route
+        return this
+    }
 
     /** 在 Activity / Application 中全局设置转场动画 */
     fun setDefaultTransition(transition: NavTransition): NavCenter {
@@ -49,16 +68,10 @@ object NavCenter : Navigator {
 
     fun getGlobalTransition(): NavTransition = globalTransition
 
-    /** 业务层全局拦截器链 */
-    private val globalInterceptors = mutableListOf<RouteInterceptor>()
-
     fun addGlobalInterceptor(interceptor: RouteInterceptor): NavCenter {
         globalInterceptors.add(interceptor)
         return this
     }
-
-    // 支持存储 @Composable 组合函数闭包
-    private val decoratorFactories = mutableListOf<@Composable () -> NavEntryDecorator<NavDestination>>()
 
     /** 链式注册普通静态 NavEntryDecorator 实例 */
     fun addEntryDecorator(decorator: NavEntryDecorator<NavDestination>): NavCenter {
@@ -66,7 +79,7 @@ object NavCenter : Navigator {
         return this
     }
 
-    /** 链式注册 @Composable 工厂闭包 (专门支持官方 rememberViewModelStoreNavEntryDecorator) */
+    /** 注册 @Composable 工厂闭包 (专门支持官方 rememberViewModelStoreNavEntryDecorator) */
     fun addEntryDecorator(factory: @Composable () -> NavEntryDecorator<NavDestination>): NavCenter {
         decoratorFactories.add(factory)
         return this
@@ -78,6 +91,12 @@ object NavCenter : Navigator {
         return decoratorFactories.map { it.invoke() }
     }
 
+    /** 注册自定义 RouteHandler */
+    fun addRouteHandler(handler: RouteHandler) : NavCenter{
+        this.routeHandlers.add(handler)
+        return this
+    }
+
     override fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)?): NavCenter {
        return navigate(destination.toUrl(), builder)
     }
@@ -86,60 +105,82 @@ object NavCenter : Navigator {
         val options = NavOptionsBuilder().apply(builder ?: {}).build()
 
         scope.launch {
-            val uri = url.toUri()
-            val path = uri.path?.removePrefix("/") ?: uri.schemeSpecificPart
-            val meta = NavRegistry.getMeta(path) ?: return@launch
+            navigateMutex.withLock {
+                val uri = url.toUri()
 
-            // 全局拦截器
-            for (interceptor in globalInterceptors) {
-                when (val result = interceptor.intercept(url)) {
-                    is InterceptResult.Proceed -> continue
-                    is InterceptResult.Redirect -> {
-                        navigate(result.targetUrl, builder)
+                for (handler in routeHandlers) {
+                    if (handler.handle(uri)) {
                         return@launch
                     }
-
-                    is InterceptResult.Abort -> return@launch
                 }
-            }
 
-            // 路由私有拦截器
-            for (interceptor in meta.interceptors) {
-                when (val result = interceptor.intercept(url)) {
-                    is InterceptResult.Proceed -> continue
-                    is InterceptResult.Redirect -> {
-                        navigate(result.targetUrl, builder)
-                        return@launch
+                val path = uri.path?.removePrefix("/") ?: uri.schemeSpecificPart
+                var meta = NavRegistry.getMeta(path)
+
+                // 404 容错降级机制：若路由未找到且配置了 fallbackRoute，则重定向到 404 页
+                if (meta == null && !fallbackRoute.isNullOrEmpty() && path != fallbackRoute) {
+                    val fallbackMeta = NavRegistry.getMeta(fallbackRoute!!)
+                    if (fallbackMeta != null) {
+                        meta = fallbackMeta
+                    } else {
+                        return@withLock
                     }
-
-                    is InterceptResult.Abort -> return@launch
+                } else if (meta == null) {
+                    return@withLock
                 }
-            }
 
-            val queryParams = uri.queryParameterNames.associateWith { name ->
-                uri.getQueryParameter(name) ?: ""
-            }
-            val destination = meta.factory(queryParams)
+                // 全局拦截器
+                for (interceptor in globalInterceptors) {
+                    when (val result = interceptor.intercept(url)) {
+                        is InterceptResult.Proceed -> continue
+                        is InterceptResult.Redirect -> {
+                            navigate(result.targetUrl, builder)
+                            return@launch
+                        }
 
-            //  栈控制策略
-            val backstack = primaryStack.backstack
-            if (options.clearTask) {
-                backstack.clear()
-            } else if (options.popUpToRoute != null) {
-                val index = backstack.indexOfLast { it.route == options.popUpToRoute }
-                if (index != -1) {
-                    val targetIndex = if (options.inclusive) index else index + 1
-                    while (backstack.size > targetIndex) {
-                        backstack.removeAt(backstack.lastIndex)
+                        is InterceptResult.Abort -> return@launch
                     }
                 }
+
+                // 路由私有拦截器
+                for (interceptor in meta.interceptors) {
+                    when (val result = interceptor.intercept(url)) {
+                        is InterceptResult.Proceed -> continue
+                        is InterceptResult.Redirect -> {
+                            navigate(result.targetUrl, builder)
+                            return@launch
+                        }
+
+                        is InterceptResult.Abort -> return@launch
+                    }
+                }
+
+                val queryParams = uri.queryParameterNames.associateWith { name ->
+                    uri.getQueryParameter(name) ?: ""
+                }
+                val destination = meta.factory(queryParams)
+
+                //  栈控制策略
+                val backstack = primaryStack.backstack
+                if (options.clearTask) {
+                    backstack.clear()
+                } else if (options.popUpToRoute != null) {
+                    val index = backstack.indexOfLast { it.route == options.popUpToRoute }
+                    if (index != -1) {
+                        val targetIndex = if (options.inclusive) index else index + 1
+                        while (backstack.size > targetIndex) {
+                            backstack.removeAt(backstack.lastIndex)
+                        }
+                    }
+                }
+
+                if (options.launchSingleTop && backstack.lastOrNull()?.route == meta.route) {
+                    return@launch
+                }
+
+                backstack.add(destination)
             }
 
-            if (options.launchSingleTop && backstack.lastOrNull()?.route == meta.route) {
-                return@launch
-            }
-
-            backstack.add(destination)
         }
 
         return this
@@ -229,10 +270,8 @@ fun NavHostContainer(stack: NavStack) {
                             meta.content(destination)
                         }
                     }
-                },
+                }
             )
         }
     }
-
-
 }

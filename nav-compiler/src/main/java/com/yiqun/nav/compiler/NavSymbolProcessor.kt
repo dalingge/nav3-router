@@ -15,8 +15,8 @@ import com.squareup.kotlinpoet.ksp.writeTo
 
 class NavSymbolProcessor(
     private val codeGenerator: CodeGenerator,
-    private val logger: KSPLogger, // KSP 日志记录器
-    private val options: Map<String, String> // KSP 环境变量选项
+    private val logger: KSPLogger,
+    private val options: Map<String, String>
 ) : SymbolProcessor {
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
@@ -24,14 +24,25 @@ class NavSymbolProcessor(
             .filterIsInstance<KSFunctionDeclaration>()
             .toList()
 
-        if (symbols.isEmpty()) {
-            return emptyList()
+        if (symbols.isEmpty()) return emptyList()
+
+        //  1. 编译期查重检测 (Duplicate Route Detection)
+        val routeMap = mutableMapOf<String, KSFunctionDeclaration>()
+        symbols.forEach { function ->
+            val annotation = function.annotations.firstOrNull { it.shortName.asString() == "Screen" } ?: return@forEach
+            val route = annotation.arguments.firstOrNull { it.name?.asString() == "route" }?.value as? String ?: ""
+
+            if (routeMap.containsKey(route)) {
+                val conflictFunc = routeMap[route]!!
+                logger.error(
+                    "❌ [Nav3-Router 编译错误] 路由冲突！路径 '$route' 同时被 ${conflictFunc.qualifiedName?.asString()} 和 ${function.qualifiedName?.asString()} 占用。路由路径必须全局唯一！",
+                    function
+                )
+            } else {
+                routeMap[route] = function
+            }
         }
 
-        logger.info("==================== NavSymbolProcessor Start ====================")
-        logger.info("Found ${symbols.size} @Screen annotated composable functions.")
-
-        //  自动模块名识别逻辑：优先读取 Gradle arg，若无则自动根据 Package 解析
         val moduleNameFromPkg = symbols.firstOrNull()?.packageName?.asString()
             ?.split(".")
             ?.dropLast(1)
@@ -43,9 +54,6 @@ class NavSymbolProcessor(
         val initFuncName = if (capitalizedModuleName.isNotEmpty()) "init${capitalizedModuleName}" else "initNavRegistry"
         val fileName = if (capitalizedModuleName.isNotEmpty()) "${capitalizedModuleName}NavRegistryInit" else "NavRegistryInit"
 
-        logger.info("Target Module -> '$capitalizedModuleName' | Function -> NavCenter.$initFuncName() | File -> $fileName.kt")
-
-        // 收集增量源文件依赖，防止 build 目录清理后丢失
         val sourceFiles = symbols.mapNotNull { it.containingFile }.toTypedArray()
         val dependencies = Dependencies(aggregating = true, *sourceFiles)
 
@@ -53,38 +61,23 @@ class NavSymbolProcessor(
 
         symbols.forEach { function ->
             val annotation = function.annotations.firstOrNull { it.shortName.asString() == "Screen" } ?: return@forEach
-
             val route = annotation.arguments.firstOrNull { it.name?.asString() == "route" }?.value as? String ?: ""
             val needLogin = annotation.arguments.firstOrNull { it.name?.asString() == "needLogin" }?.value as? Boolean ?: false
-
-            if (route.isEmpty()) {
-                logger.error("Route path cannot be empty on function: ${function.simpleName.asString()}", function)
-                return@forEach
-            }
 
             val functionName = function.simpleName.asString()
             val packageName = function.packageName.asString()
             val destClassName = "${functionName}Destination"
 
-            logger.info("Processing Screen: route = '$route' -> $packageName.$destClassName")
-
-            // 过滤提取路由参数（排除带有默认值的 ViewModel 和 Navigator）
             val routeParams = function.parameters.filter { param ->
                 val typeName = param.type.toTypeName().toString()
                 !param.hasDefault && typeName != "com.yiqun.nav.runtime.Navigator"
             }
 
-            // 生成 Destination 强类型数据类
             generateDestinationClass(packageName, destClassName, route, routeParams, dependencies)
-
-            // 拼接代码块
-            buildRegistryStatement(registryInitBlock, packageName, destClassName, route, needLogin, function, routeParams, annotation)
+            buildRegistryStatement(registryInitBlock, packageName, destClassName, route, needLogin, function, routeParams, annotation, logger)
         }
 
-        // 生成模块注册表初始化文件
-        generateRegistryFile(fileName, initFuncName, registryInitBlock.build(), dependencies)
-
-        logger.info("==================== NavSymbolProcessor Finish ====================")
+        generateRegistryFile(fileName, initFuncName, registryInitBlock.build(), dependencies, logger)
         return emptyList()
     }
 
@@ -101,7 +94,6 @@ class NavSymbolProcessor(
         val primaryConstructor = FunSpec.constructorBuilder()
 
         if (routeParams.isEmpty()) {
-            // 无参生成普通 class (避免 Kotlin data class 无参编译错误)
             classBuilder.addProperty(
                 PropertySpec.builder("route", String::class, KModifier.OVERRIDE).initializer("%S", route).build()
             )
@@ -134,7 +126,6 @@ class NavSymbolProcessor(
                 PropertySpec.builder("route", String::class, KModifier.OVERRIDE).initializer("%S", route).build()
             )
 
-            // 使用 %L 输出原生 Kotlin 运行时求值表达式
             classBuilder.addFunction(
                 FunSpec.builder("toUrl").addModifiers(KModifier.OVERRIDE).returns(String::class)
                     .addStatement("%L", finalToUrlStatement)
@@ -148,8 +139,6 @@ class NavSymbolProcessor(
             .addType(classBuilder.build())
             .build()
             .writeTo(codeGenerator, dependencies)
-
-        logger.logging("Generated Destination Class: $packageName.$className")
     }
 
     private fun buildRegistryStatement(
@@ -160,7 +149,8 @@ class NavSymbolProcessor(
         needLogin: Boolean,
         function: KSFunctionDeclaration,
         routeParams: List<KSValueParameter>,
-        annotation: KSAnnotation
+        annotation: KSAnnotation,
+        logger: KSPLogger
     ) {
         val destFQCN = ClassName(pkg, destClass)
 
@@ -172,7 +162,7 @@ class NavSymbolProcessor(
         block.addStatement("route = %S,", route)
         block.addStatement("needLogin = $needLogin,")
 
-        // Factory 构建
+        //  必传参数防御解析 (Required Arguments Check)
         block.addStatement("factory = { params ->")
         block.indent()
 
@@ -181,24 +171,40 @@ class NavSymbolProcessor(
         } else {
             val factoryArgs = routeParams.joinToString(", ") { p ->
                 val pName = p.name!!.asString()
+                val isRequired = p.annotations.any { it.shortName.asString() == "Required" }
+
                 when (p.type.toTypeName().toString()) {
                     "kotlin.Int" -> "$pName = params[\"$pName\"]?.toIntOrNull() ?: 0"
                     "kotlin.Boolean" -> "$pName = params[\"$pName\"]?.toBooleanStrictOrNull() ?: false"
                     "kotlin.Long" -> "$pName = params[\"$pName\"]?.toLongOrNull() ?: 0L"
-                    "kotlin.String" -> "$pName = params[\"$pName\"] ?: \"\""
+                    "kotlin.String" -> {
+                        if (isRequired) {
+                            // 必传参数若为空则抛出显式 IllegalStateException
+                            "$pName = params[\"$pName\"].takeIf { !it.isNullOrEmpty() } ?: throw IllegalStateException(\"Missing required route parameter: '$pName' for route '$route'\")"
+                        } else {
+                            "$pName = params[\"$pName\"] ?: \"\""
+                        }
+                    }
                     else -> "$pName = kotlinx.serialization.json.Json.decodeFromString(params[\"$pName\"] ?: \"{}\")"
                 }
             }
+            block.addStatement("try {")
+            block.indent()
             block.addStatement("%T($factoryArgs)", destFQCN)
+            block.unindent()
+            block.addStatement("} catch(e: Exception) {")
+            block.indent()
+            block.addStatement("throw IllegalArgumentException(\"Failed to parse arguments for route '$route': \${e.message}\", e)")
+            block.unindent()
+            block.addStatement("}")
         }
 
         block.unindent()
         block.addStatement("},")
 
-        // Content 调用
+        // Content
         block.addStatement("content = { dest ->")
         block.indent()
-
         if (routeParams.isEmpty()) {
             block.addStatement("%M()", MemberName(pkg, function.simpleName.asString()))
         } else {
@@ -209,25 +215,25 @@ class NavSymbolProcessor(
             }
             block.addStatement("%M($composableCallArgs)", MemberName(pkg, function.simpleName.asString()))
         }
-
         block.unindent()
         block.addStatement("},")
 
-        // 解析局部拦截器
+        // Interceptors
         val interceptorsArg = annotation.arguments.firstOrNull { it.name?.asString() == "interceptors" }
         @Suppress("UNCHECKED_CAST")
-        val interceptorTypes = (interceptorsArg?.value as? List<*>)?.mapNotNull { it as? KSType } ?: emptyList()
+        val interceptorTypes = (interceptorsArg?.value as? List<KSType>) ?: emptyList()
 
         if (interceptorTypes.isEmpty()) {
             block.addStatement("interceptors = emptyList(),")
         } else {
             val instances = interceptorTypes.joinToString(", ") {
+                // 动态实例化运行时拦截器
                 "${it.declaration.qualifiedName?.asString()}()"
             }
             block.addStatement("interceptors = listOf($instances),")
         }
 
-        // 解析局部转场动画
+        // Transition
         val transitionArg = annotation.arguments.firstOrNull { it.name?.asString() == "enterTransition" }
         val transitionType = transitionArg?.value as? KSType
         val transitionClassName = transitionType?.declaration?.qualifiedName?.asString()
@@ -248,15 +254,16 @@ class NavSymbolProcessor(
         fileName: String,
         funcName: String,
         initBlock: CodeBlock,
-        dependencies: Dependencies
+        dependencies: Dependencies,
+        logger: KSPLogger
     ) {
         val navCenterClassName = ClassName("com.yiqun.nav.runtime", "NavCenter")
 
         FileSpec.builder("com.yiqun.nav.generated", fileName)
             .addFunction(
                 FunSpec.builder(funcName)
-                    .receiver(navCenterClassName) // 扩展函数：NavCenter.initXxx()
-                    .returns(navCenterClassName)  // 支持链式调用：return this
+                    .receiver(navCenterClassName)
+                    .returns(navCenterClassName)
                     .addCode(initBlock)
                     .addStatement("return this")
                     .build()
@@ -264,6 +271,6 @@ class NavSymbolProcessor(
             .build()
             .writeTo(codeGenerator, dependencies)
 
-        logger.info("Successfully generated Init Registry: com.yiqun.nav.generated.$fileName.kt -> fun NavCenter.$funcName()")
+        logger.info("Successfully generated: com.yiqun.nav.generated.$fileName.kt")
     }
 }

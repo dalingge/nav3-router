@@ -1,11 +1,11 @@
 package com.yiqun.example
 
-import com.yiqun.nav.annotation.InterceptResult
-import com.yiqun.nav.annotation.RouteInterceptor
 import com.yiqun.nav.runtime.NavRegistry
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import androidx.core.net.toUri
+import com.yiqun.nav.runtime.InterceptResult
+import com.yiqun.nav.runtime.RouteInterceptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

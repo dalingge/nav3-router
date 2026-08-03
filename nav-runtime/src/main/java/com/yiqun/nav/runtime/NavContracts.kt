@@ -1,7 +1,6 @@
 package com.yiqun.nav.runtime
 
 import androidx.compose.runtime.Composable
-import com.yiqun.nav.annotation.RouteInterceptor
 import java.util.UUID
 
 /**

@@ -1,5 +1,7 @@
 package com.yiqun.example
 
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -12,12 +14,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yiqun.example.ui.theme.Nav3routerTheme
 import com.yiqun.nav.annotation.Screen
 import com.yiqun.nav.runtime.NavCenter
 import com.yiqun.nav.runtime.SharedElementTransition
 import com.yiqun.nav.runtime.sharedElementKey
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 /**
  *
@@ -49,7 +54,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(onClick = {
-            NavCenter.navigate("https://www.app.cn/app/detail?user=%7B%22id%22%3A999%2C%22name%22%3A%22URLUser%22%7D")
+            NavCenter.navigate("app/detail?user=%7B%22id%22%3A999%2C%22name%22%3A%22URLUser%22%7D")
         }) {
             Text("URL 动态跳转 -> 详情页")
         }
@@ -57,9 +62,27 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(onClick = {
-            NavCenter.navigate( "https://www.app.cn/app/user")
+            NavCenter.navigate("app/user")
         }) {
             Text("URL 动态跳转 其他模块-> 用户页")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+
+        Button(onClick = {
+            NavCenter.navigate("https://www.app.cn/activity/promo?id=100")
+        }) {
+            Text("跳转白名单 H5 链接")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+
+        Button(onClick = {
+            NavCenter.navigate("https://www.github.com/kotlin")
+        }) {
+            Text("跳转非白名单 H5 链接")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -140,6 +163,36 @@ fun ImageScreen(imageKey: String) {
         )
         Text("详情页内容")
     }
+}
+
+/**
+ * 本地 H5 渲染容器页面
+ */
+@Composable
+@Screen(route = "app/webview")
+fun WebViewScreen(url: String) {
+    // 自动对传入的编码 URL 进行解码
+    val decodedUrl = remember(url) {
+        try {
+            URLDecoder.decode(url, StandardCharsets.UTF_8.name())
+        } catch (e: Exception) {
+            url
+        }
+    }
+
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { context ->
+            WebView(context).apply {
+                webViewClient = WebViewClient()
+                settings.javaScriptEnabled = true
+                loadUrl(decodedUrl)
+            }
+        },
+        update = { webView ->
+            webView.loadUrl(decodedUrl)
+        }
+    )
 }
 
 
