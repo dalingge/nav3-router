@@ -87,6 +87,14 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        Button(onClick = {
+            NavCenter.navigate("app/cart")
+        }) {
+            Text("跳转404 降级页面")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         Image(
             painter = painterResource(R.mipmap.image),
             contentDescription = null,
@@ -195,6 +203,18 @@ fun WebViewScreen(url: String) {
     )
 }
 
+
+/**
+ * 404 降级页面
+ */
+@Composable
+@Screen(route = "app/not_found")
+fun NotFoundScreen(url: String) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Text("404 ",modifier = Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleLarge)
+
+    }
+}
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Preview(showBackground = true)

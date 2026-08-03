@@ -24,16 +24,14 @@ object UserSession {
  * App 业务层自定义登录拦截器：完全由业务决定拦截规则！
  */
 class AppLoginInterceptor : RouteInterceptor {
-    override suspend fun intercept(url: String): InterceptResult {
+    override  fun intercept(url: String): InterceptResult {
         val uri = url.toUri()
         val path = uri.path?.removePrefix("/") ?: uri.schemeSpecificPart
         val meta = NavRegistry.getMeta(path)
 
         // 校验页面元数据是否配置了 needLogin = true
         if (meta?.needLogin == true && !UserSession.isLoggedIn) {
-            val encodedTarget = withContext(Dispatchers.IO) {
-                URLEncoder.encode(url, StandardCharsets.UTF_8.name())
-            }
+            val encodedTarget = URLEncoder.encode(url, StandardCharsets.UTF_8.name())
             // 业务自定义重定向目标
             return InterceptResult.Redirect("app/login?redirect=$encodedTarget")
         }

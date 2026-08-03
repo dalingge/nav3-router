@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         NavCenter
+            .setFallbackRoute("app/not_found")
             .addRouteHandler(WebViewHandler("app/webview", setOf("app.cn", "domain.com", "baidu.com")))
             .addRouteHandler(BrowserHandler(this))
             .setDefaultTransition(DefaultSlideTransition()) // 注册全局动画

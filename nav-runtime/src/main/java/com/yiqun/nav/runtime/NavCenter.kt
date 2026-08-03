@@ -1,18 +1,17 @@
 package com.yiqun.nav.runtime
 
+import android.net.Uri
+import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import androidx.core.net.toUri
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  *
@@ -35,32 +34,48 @@ object NavRegistry {
 }
 
 object NavCenter : Navigator {
-    private val scope = CoroutineScope(Dispatchers.Main)
     val primaryStack = NavStack("GlobalPrimary")
+
     private val resultStore = mutableStateMapOf<String, Any?>()
 
-    /** 全局默认转场动画 */
-    private var globalTransition: NavTransition = DefaultSlideTransition()
-    /** 业务层全局拦截器链 */
-    private val globalInterceptors = mutableListOf<RouteInterceptor>()
-    // 支持存储 @Composable 组合函数闭包
-    private val decoratorFactories = mutableListOf<@Composable () -> NavEntryDecorator<NavDestination>>()
-    // 链式 Handler 责任链
-    private val routeHandlers = mutableListOf<RouteHandler>()
+    //  统一使用 CopyOnWriteArrayList 确保 100% 线程安全
+    private val routeHandlers = CopyOnWriteArrayList<RouteHandler>()
+    private val globalInterceptors = CopyOnWriteArrayList<RouteInterceptor>()
+    private val decoratorFactories = CopyOnWriteArrayList<@Composable () -> NavEntryDecorator<NavDestination>>()
 
-    // 404 容错降级路由 Path（例如 "app/not_found"）
+    @Volatile
+    private var globalTransition: NavTransition = DefaultSlideTransition()
+    @Volatile
     private var fallbackRoute: String? = null
 
-    // 协程并发互斥锁：防止短时间内多次快速调用 navigate 导致状态错乱与闪退
-    private val navigateMutex = Mutex()
+    // 主线程同步重入锁
+    private val navLock = ReentrantLock()
 
-    /** 设置 404 容错降级路由 */
     fun setFallbackRoute(route: String): NavCenter {
         this.fallbackRoute = route
         return this
     }
 
-    /** 在 Activity / Application 中全局设置转场动画 */
+    fun addRouteHandler(handler: RouteHandler): NavCenter {
+        this.routeHandlers.add(handler)
+        return this
+    }
+
+    fun addEntryDecorator(decorator: NavEntryDecorator<NavDestination>): NavCenter {
+        decoratorFactories.add { decorator }
+        return this
+    }
+
+    fun addEntryDecorator(factory: @Composable () -> NavEntryDecorator<NavDestination>): NavCenter {
+        decoratorFactories.add(factory)
+        return this
+    }
+
+    @Composable
+    fun getEntryDecorators(): List<NavEntryDecorator<NavDestination>> {
+        return decoratorFactories.map { it.invoke() }
+    }
+
     fun setDefaultTransition(transition: NavTransition): NavCenter {
         this.globalTransition = transition
         return this
@@ -69,145 +84,172 @@ object NavCenter : Navigator {
     fun getGlobalTransition(): NavTransition = globalTransition
 
     fun addGlobalInterceptor(interceptor: RouteInterceptor): NavCenter {
-        globalInterceptors.add(interceptor)
-        return this
-    }
-
-    /** 链式注册普通静态 NavEntryDecorator 实例 */
-    fun addEntryDecorator(decorator: NavEntryDecorator<NavDestination>): NavCenter {
-        decoratorFactories.add { decorator }
-        return this
-    }
-
-    /** 注册 @Composable 工厂闭包 (专门支持官方 rememberViewModelStoreNavEntryDecorator) */
-    fun addEntryDecorator(factory: @Composable () -> NavEntryDecorator<NavDestination>): NavCenter {
-        decoratorFactories.add(factory)
-        return this
-    }
-
-    /** 在 Render 时动态求值获取所有 Decorator 实例 */
-    @Composable
-    fun getDecorators(): List<NavEntryDecorator<NavDestination>> {
-        return decoratorFactories.map { it.invoke() }
-    }
-
-    /** 注册自定义 RouteHandler */
-    fun addRouteHandler(handler: RouteHandler) : NavCenter{
-        this.routeHandlers.add(handler)
+        this.globalInterceptors.add(interceptor)
         return this
     }
 
     override fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)?): NavCenter {
-       return navigate(destination.toUrl(), builder)
+        navigate(destination.toUrl(), builder)
+        return this
     }
 
-    override fun navigate(url: String, builder: (NavOptionsBuilder.() -> Unit)?) : NavCenter{
+    override fun navigate(url: String, builder: (NavOptionsBuilder.() -> Unit)?): NavCenter {
         val options = NavOptionsBuilder().apply(builder ?: {}).build()
 
-        scope.launch {
-            navigateMutex.withLock {
-                val uri = url.toUri()
+        // 🟢 主线程绝对同步且原子化执行，零 runBlocking，零 ANR 风险
+        navLock.withLock {
+            var currentUrl = url
+            var redirectCount = 0
+            val maxRedirects = 10
+            var targetMeta: RouteMeta? = null
+            var finalUri: Uri? = null
 
+            // 同步 Redirect 循环
+            while (redirectCount <= maxRedirects) {
+                val uri = Uri.parse(currentUrl)
+                finalUri = uri
+
+                //  责任链前置处理
+                var handled = false
                 for (handler in routeHandlers) {
                     if (handler.handle(uri)) {
-                        return@launch
+                        handled = true
+                        break
                     }
                 }
+                if (handled) return@withLock
 
+                //  匹配路由元数据
                 val path = uri.path?.removePrefix("/") ?: uri.schemeSpecificPart
                 var meta = NavRegistry.getMeta(path)
 
-                // 404 容错降级机制：若路由未找到且配置了 fallbackRoute，则重定向到 404 页
+                // 404 容错降级
                 if (meta == null && !fallbackRoute.isNullOrEmpty() && path != fallbackRoute) {
-                    val fallbackMeta = NavRegistry.getMeta(fallbackRoute!!)
-                    if (fallbackMeta != null) {
-                        meta = fallbackMeta
-                    } else {
-                        return@withLock
-                    }
-                } else if (meta == null) {
-                    return@withLock
+                    meta = NavRegistry.getMeta(fallbackRoute!!)
                 }
 
-                // 全局拦截器
+                if (meta == null) {
+                    // 若路由找不到，提前跳出 while 循环走统一日志输出
+                    break
+                }
+
+                //  全局拦截器链 (纯同步极其迅速)
+                var hasRedirect = false
                 for (interceptor in globalInterceptors) {
-                    when (val result = interceptor.intercept(url)) {
+                    when (val result = interceptor.intercept(currentUrl)) {
                         is InterceptResult.Proceed -> continue
                         is InterceptResult.Redirect -> {
-                            navigate(result.targetUrl, builder)
-                            return@launch
+                            currentUrl = result.targetUrl
+                            hasRedirect = true
+                            redirectCount++
+                            break
                         }
-
-                        is InterceptResult.Abort -> return@launch
+                        is InterceptResult.Abort -> return@withLock
                     }
                 }
+                if (hasRedirect) continue
 
-                // 路由私有拦截器
+                //  路由私有拦截器链 (纯同步)
                 for (interceptor in meta.interceptors) {
-                    when (val result = interceptor.intercept(url)) {
+                    when (val result = interceptor.intercept(currentUrl)) {
                         is InterceptResult.Proceed -> continue
                         is InterceptResult.Redirect -> {
-                            navigate(result.targetUrl, builder)
-                            return@launch
+                            currentUrl = result.targetUrl
+                            hasRedirect = true
+                            redirectCount++
+                            break
                         }
-
-                        is InterceptResult.Abort -> return@launch
+                        is InterceptResult.Abort -> return@withLock
                     }
                 }
+                if (hasRedirect) continue
 
-                val queryParams = uri.queryParameterNames.associateWith { name ->
-                    uri.getQueryParameter(name) ?: ""
-                }
-                val destination = meta.factory(queryParams)
-
-                //  栈控制策略
-                val backstack = primaryStack.backstack
-                if (options.clearTask) {
-                    backstack.clear()
-                } else if (options.popUpToRoute != null) {
-                    val index = backstack.indexOfLast { it.route == options.popUpToRoute }
-                    if (index != -1) {
-                        val targetIndex = if (options.inclusive) index else index + 1
-                        while (backstack.size > targetIndex) {
-                            backstack.removeAt(backstack.lastIndex)
-                        }
-                    }
-                }
-
-                if (options.launchSingleTop && backstack.lastOrNull()?.route == meta.route) {
-                    return@launch
-                }
-
-                backstack.add(destination)
+                targetMeta = meta
+                break
             }
 
+            // 修正：在 while 循环外精准判断并输出超限或未找到日志
+            if (targetMeta == null || finalUri == null) {
+                if (redirectCount > maxRedirects) {
+                    Log.e("NavCenter", "❌ Redirect chain exceeded $maxRedirects hops, last url: $currentUrl")
+                } else {
+                    val path = finalUri?.let { it.path?.removePrefix("/") ?: it.schemeSpecificPart } ?: ""
+                    Log.w("NavCenter", "⚠️ Route not found for path: '$path' (url=$currentUrl)")
+                }
+                return@withLock
+            }
+
+            val queryParams = finalUri.queryParameterNames.associateWith { name ->
+                finalUri.getQueryParameter(name) ?: ""
+            }
+
+            val destination = try {
+                targetMeta.factory(queryParams)
+            } catch (e: Exception) {
+                Log.e("NavCenter", "❌ Failed to instantiate destination for route: ${targetMeta.route}", e)
+                return@withLock
+            }
+
+            //  栈控制策略
+            val backstack = primaryStack.backstack
+            if (options.clearTask) {
+                backstack.clear()
+            } else if (options.popUpToRoute != null) {
+                val index = backstack.indexOfLast { it.route == options.popUpToRoute }
+                if (index != -1) {
+                    val targetIndex = if (options.inclusive) index else index + 1
+                    while (backstack.size > targetIndex) {
+                        backstack.removeAt(backstack.lastIndex)
+                    }
+                }
+            }
+
+            if (options.launchSingleTop && backstack.lastOrNull()?.route == targetMeta.route) {
+                return@withLock
+            }
+
+            backstack.add(destination)
         }
 
         return this
     }
 
     override fun pop(): Boolean {
-        val backstack = primaryStack.backstack
-        if (backstack.size > 1) {
-            backstack.removeAt(backstack.lastIndex)
-            return true
+        return navLock.withLock {
+            val backstack = primaryStack.backstack
+            if (backstack.size > 1) {
+                backstack.removeAt(backstack.lastIndex)
+                true
+            } else {
+                false
+            }
         }
-        return false
     }
 
-    override fun <T> popWithResult(key: String, result: T) {
-        resultStore[key] = result
-        pop()
+    override fun <T> popWithResult(key: String, result: T): Boolean {
+        return navLock.withLock {
+            val backstack = primaryStack.backstack
+            if (backstack.size > 1) {
+                resultStore[key] = result
+                backstack.removeAt(backstack.lastIndex)
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    fun clearResult(key: String) {
+        resultStore.remove(key)
     }
 
     @Composable
     fun <T> getResult(key: String): State<T?> {
         val state = remember { mutableStateOf<T?>(null) }
         LaunchedEffect(resultStore[key]) {
-            @Suppress("UNCHECKED_CAST")
-            val valResult = resultStore[key] as? T
-            if (valResult != null) {
-                state.value = valResult
+            if (resultStore.containsKey(key)) {
+                @Suppress("UNCHECKED_CAST")
+                state.value = resultStore[key] as T?
                 resultStore.remove(key)
             }
         }
@@ -233,7 +275,7 @@ fun NavHostContainer(stack: NavStack) {
     // 获取官方原生的 UI 状态恢复装饰器 (处理 rememberSaveable、TextField 输入框、列表滚动位置保留)
     val saveableDecorator = rememberSaveableStateHolderNavEntryDecorator<NavDestination>()
     //  官方 Saveable 装饰器 (必须置顶) + 用户链式添加的所有 Decorators
-    val allDecorators = listOf(saveableDecorator) + NavCenter.getDecorators()
+    val allDecorators = listOf(saveableDecorator) + NavCenter.getEntryDecorators()
 
     // 最外层包裹官方 SharedTransitionLayout
     SharedTransitionLayout {

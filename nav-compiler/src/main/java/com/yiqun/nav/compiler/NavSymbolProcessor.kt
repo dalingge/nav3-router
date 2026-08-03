@@ -113,11 +113,15 @@ class NavSymbolProcessor(
                 classBuilder.addProperty(PropertySpec.builder(name, type).initializer(name).build())
 
                 val typeStr = type.toString()
-                if (typeStr == "kotlin.String" || typeStr == "kotlin.Int" || typeStr == "kotlin.Boolean" || typeStr == "kotlin.Long") {
-                    toUrlCode.append("$name=\$$name&")
-                } else {
-                    toUrlCode.append("$name=\${java.net.URLEncoder.encode(kotlinx.serialization.json.Json.encodeToString($name), \"UTF-8\")}&")
+                when (typeStr) {
+                    "kotlin.Int", "kotlin.Boolean", "kotlin.Long" ->
+                        toUrlCode.append("$name=\$$name&")
+                    "kotlin.String" ->
+                        toUrlCode.append("$name=\${java.net.URLEncoder.encode($name, \"UTF-8\")}&")
+                    else ->
+                        toUrlCode.append("$name=\${java.net.URLEncoder.encode(kotlinx.serialization.json.Json.encodeToString($name), \"UTF-8\")}&")
                 }
+
             }
 
             val finalToUrlStatement = toUrlCode.toString().dropLast(1) + "\""

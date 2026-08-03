@@ -11,7 +11,7 @@ package com.yiqun.nav.runtime
  * 路由拦截器接口（归属于 runtime 运行时层）
  */
 interface RouteInterceptor {
-    suspend fun intercept(url: String): InterceptResult
+    fun intercept(url: String): InterceptResult
 }
 
 /**

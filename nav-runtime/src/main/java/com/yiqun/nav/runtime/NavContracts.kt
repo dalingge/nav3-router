@@ -49,7 +49,7 @@ interface Navigator {
     fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)? = null): NavCenter
     fun navigate(url: String, builder: (NavOptionsBuilder.() -> Unit)? = null): NavCenter
     fun pop(): Boolean
-    fun <T> popWithResult(key: String, result: T)
+    fun <T> popWithResult(key: String, result: T): Boolean
 }
 
 /**
