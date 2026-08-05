@@ -6,11 +6,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.yiqun.nav.annotation.Screen
 import com.yiqun.nav.runtime.NavCenter
-import com.yiqun.nav.runtime.rememberScreenLifecycle
 
 /**
  *
@@ -22,12 +24,23 @@ import com.yiqun.nav.runtime.rememberScreenLifecycle
 @Screen(route = "app/user", needLogin = true)
 fun UserScreen() {
 
-    // 声明式监听页面显隐与出栈销毁
-    rememberScreenLifecycle(
-        onAppear = { println("📊 [DetailScreen] 页面上屏/可见") },
-        onDisappear = { println("📊 [DetailScreen] 页面被覆盖/退居后台") },
-        onDispose = { println("📊 [DetailScreen] 页面已被 Pop 出栈销毁") }
-    )
+
+    LifecycleEventEffect(Lifecycle.Event.ON_CREATE) {
+        println("📊 [UserScreen] 页面初始化")
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        println("📊 [UserScreen] 页面上屏/可见")
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
+        println("📊 [UserScreen] 页面被覆盖/退居后台")
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            println("📊 [UserScreen] 页面已被 Pop 出栈销毁")
+        }
+    }
 
     Column(modifier = Modifier.padding(16.dp)) {
         Text("用户页 (User)", style = MaterialTheme.typography.headlineMedium)
