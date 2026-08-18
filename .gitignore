@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+CLAUDE.md
+AGENTS.md
