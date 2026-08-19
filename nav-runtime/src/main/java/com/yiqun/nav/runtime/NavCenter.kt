@@ -1,6 +1,8 @@
 package com.yiqun.nav.runtime
 
+import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.runtime.*
@@ -47,9 +49,55 @@ object NavCenter : Navigator {
     private var globalTransition: NavTransition = DefaultSlideTransition()
     @Volatile
     private var fallbackRoute: String? = null
+    // 注入解耦的 Intent 解析策略，默认使用 DefaultIntentResolver
+    @Volatile
+    private var intentResolver: IntentResolver = DefaultIntentResolver()
 
     // 主线程同步重入锁
     private val navLock = ReentrantLock()
+
+    /**  自定义 Intent 解析策略（如复杂加密推送 Payload） */
+    fun setIntentResolver(resolver: IntentResolver): NavCenter {
+        this.intentResolver = resolver
+        return this
+    }
+
+    /** 解耦接管系统 Intent / Scheme / 推送通知跳转 */
+    fun handleIntent(intent:  Intent?, builder: (NavOptionsBuilder.() -> Unit)? = null): Boolean {
+        val targetUrl = intentResolver.resolve(intent)
+        if (!targetUrl.isNullOrEmpty()) {
+            navigate(targetUrl, builder)
+            return true
+        }
+        return false
+    }
+
+    /** 将当前 Backstack 序列化存入 Bundle（进程被杀前调用） */
+    fun saveState(outState: Bundle): Bundle {
+        return navLock.withLock {
+            val urlList = primaryStack.backstack.map { it.toUrl() }
+            outState.putStringArrayList("NAV3_SAVED_BACKSTACK_${primaryStack.name}", ArrayList(urlList))
+            outState
+        }
+    }
+
+    /** 从 Bundle 中恢复被杀死前的整个页面 Backstack（进程重开后调用） */
+    fun restoreState(savedInstanceState: Bundle?): Boolean {
+        if (savedInstanceState == null) return false
+        return navLock.withLock {
+            val savedUrls = savedInstanceState.getStringArrayList("NAV3_SAVED_BACKSTACK_${primaryStack.name}")
+            if (!savedUrls.isNullOrEmpty()) {
+                primaryStack.backstack.clear()
+                savedUrls.forEach { url ->
+                    // 依次重建并恢复栈中的每一个页面！
+                    navigate(url)
+                }
+                true
+            } else {
+                false
+            }
+        }
+    }
 
     fun setFallbackRoute(route: String): NavCenter {
         this.fallbackRoute = route

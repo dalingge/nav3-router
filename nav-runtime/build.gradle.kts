@@ -23,7 +23,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-
+    // 仅发布 release 变体，使 maven-publish 能访问 components["release"]
+    publishing {
+        singleVariant("release")
+    }
 }
 
 dependencies {
@@ -36,3 +39,5 @@ dependencies {
 
     api(project(":nav-annotation"))
 }
+
+apply(from = rootProject.file("publish.gradle"))

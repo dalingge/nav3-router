@@ -5,9 +5,26 @@
 [![KSP](https://img.shields.io/badge/KSP-2.3.10-brightgreen.svg)](https://kotlinlang.org/docs/ksp-overview.html)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**Nav3-Router** 是一套基于 **Android 官方 Navigation 3** 状态驱动引擎打造的新一代轻量级、响应式双轨路由与导航框架。
+**Nav3-Router** 是一套基于 **Android 官方 Navigation 3 (`androidx.navigation3:1.1.4`)** 状态驱动引擎打造的新一代轻量级、响应式双轨路由与导航框架。
 
-它融合了 **KSP 编译期类型安全** 与 **动态 URL 解耦路由**，内置高级栈控制、声明式解耦拦截链、**编译期查重与必传参数防御**、**404 容错降级**、**抗并发协程 Mutex 锁**、**全局/局部双层转场动画**、**原生共享元素形变转场（Shared Element）** 以及 `NavEntryDecorator` 装饰器洋葱皮体系。
+它融合了 **KSP 编译期类型安全** 与 **动态 URL 解耦路由**，内置高级栈控制、声明式解耦拦截链、**进程被杀栈恢复**、**DeepLink/推送一键分发**、**编译期查重与必传参数防御**、**404 容错降级**、**主线程同步安全锁**、**全局/局部双层转场动画**、**原生共享元素形变转场（Shared Element）** 以及 `NavEntryDecorator` 装饰器洋葱皮体系。
+
+---
+
+## 📦 发布到 GitLab Maven 仓库
+
+框架三个模块（`nav-annotation`、`nav-runtime`、`nav-compiler`）支持发布到 GitLab Maven 仓库（Package Registry），供其他项目作为依赖库引用。
+
+
+在 `build.gradle.kts` 中声明依赖：
+
+```kotlin
+dependencies {
+    implementation("com.yiqun.nav:nav-annotation:1.0.0")
+    implementation("com.yiqun.nav:nav-runtime:1.0.0")
+    ksp("com.yiqun.nav:nav-compiler:1.0.0")
+}
+```
 
 ---
 
@@ -23,8 +40,9 @@
 ┌────────────────────────────▼─────────────────────────────┐
 │                 框架运行时 (:nav-runtime)                  │
 │  - 极简链式配置总线 (NavCenter)                            │
-│  - 协程并发互斥锁 (Mutex 防御多点崩溃)                     │
-│  - 404 容错降级与多 Tab 独立子栈 (TabNavHost)              │
+│  - 进程被杀恢复 (saveState / restoreState)                │
+│  - DeepLink / 推送一键分发 (handleIntent & IntentResolver)│
+│  - 404 容错降级与责任链 (RouteHandler)                     │
 │  - 运行时拦截链 (RouteInterceptor) 与装饰器 (NavEntry)     │
 └────────────────────────────┬─────────────────────────────┘
                              │ (KSP 编译期扫描)
@@ -45,11 +63,12 @@
 
 ## 🌟 核心特性
 
+* **进程被杀状态恢复 (`Process Death Restoration`)**：无缝将导航栈序列化为 URL 列表存入 `Bundle`。当 App 在后台被系统杀死恢复时，一键完整重建整个页面栈，**0 Parcelable 崩溃风险**。
+* **DeepLink / 推送解耦分发 (`IntentResolver`)**：统一处理 Scheme 外部唤起、推送通知、桌面小组件与 NFC。支持通过 `IntentResolver` 策略接口自定义复杂的加密推送 Payload 解析。
 * **编译期路由查重 (`Route Duplication Check`)**：KSP 编译时自动扫描所有 `@Screen` 路径，若发现重复 route 直接中断构建，从源头上消除了线上静默覆盖隐患。
 * **404 容错降级机制 (`Fallback Route`)**：支持配置 `setFallbackRoute("app/not_found")`，当用户误点或下发错误链接时自动平滑降级，绝不白屏崩溃。
-* **抗并发协程互斥锁 (`Mutex Protection`)**：内置协程 Mutex 锁，完美抵御短时间内多次快速点击导致的导航状态错乱与闪退。
+* **责任链前置处理 (`RouteHandler`)**：基于责任链模式，可极简扩展 H5 域名白名单检测、外部系统浏览器拉起与自定义 Scheme 拦截。
 * **必传参数安全防御 (`@Required`)**：对核心路由参数使用 `@Required` 标记，若跳转时漏传参数会在运行时抛出显式异常，便于快速定位问题。
-* **运行时拦截契约下沉 (`RouteInterceptor`)**：`RouteInterceptor` 位于 `:nav-runtime`，完美支持异步协程挂起校验（如登录、VIP 鉴权、强制升级检测）。
 * **官方 Nav 3 原生对接**：直接代理 `navigation3` 的 `NavDisplay` 与 `NavEntry`，原生享受官方生命周期管理与 ViewModel 自动释放。
 * **极简流式 DSL 初始化**：通过 `NavCenter` 链式调用一次性搞定动画配置、拦截器注册、多模块路由加载与首页压栈。
 * **零配置多模块架构**：KSP 自动分析子模块包名生成唯一扩展函数（如 `NavCenter.initUser()`），无同名冲突，**0 行 Gradle 配置**。
@@ -97,33 +116,55 @@ dependencies {
 }
 ```
 
-### 2. 企业级旗舰初始化 (含 404 降级与互斥锁保护)
+### 2. 企业级旗舰初始化 (含进程恢复、DeepLink 分发与 404 降级)
 
-在 `MainActivity` 中通过 `NavCenter` 链式 API 完成所有配置：
+在 `MainActivity` 中通过 `NavCenter` 链式 API 完成配置与恢复解耦：
 
 ```kotlin
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 像 DSL 一样极简、流畅地链式初始化整个 App！
+        // 1. 流式 DSL 初始化全项配置
         NavCenter
-            .init(this)                                                     // 1. 绑定 Context
-            .setFallbackRoute("app/not_found")                              // 2. 开启 404 容错降级路由
-            .addEntryDecorator { rememberViewModelStoreNavEntryDecorator() }// 3. 注入官方 ViewModel 作用域隔离
-            .addEntryDecorator(AnalyticsEntryDecorator())                   // 4. 注入自定义全埋点与 onPop 清理
-            .setDefaultTransition(DefaultSlideTransition())                  // 5. 配置全局转场动画
-            .addGlobalInterceptor(AppLoginInterceptor())                    // 6. 注册全局登录拦截器
-            .initUser()                                                     // 7. 自动加载 :feature-user 模块路由
-            .initShop()                                                     // 8. 自动加载 :feature-shop 模块路由
-            .initApp()                                                      // 9. 自动加载 :app 模块路由
-            .navigate(HomeScreenDestination())                              // 10. 压入根首页
+            .init(this)                                                     // 绑定 Context
+            .setFallbackRoute("app/not_found")                              // 开启 404 容错降级路由
+            .addRouteHandler(WebViewHandler("app/webview", setOf("app.cn")))// H5 白名单走本地 WebView
+            .addRouteHandler(BrowserHandler(this))                          // 非白名单 H5 走系统浏览器
+            .addEntryDecorator { rememberViewModelStoreNavEntryDecorator() }// 注入官方 ViewModel 作用域隔离
+            .addEntryDecorator(AnalyticsEntryDecorator())                   // 注入自定义全埋点与 onPop 清理
+            .setDefaultTransition(DefaultSlideTransition())                  // 配置全局转场动画
+            .addGlobalInterceptor(AppLoginInterceptor())                    // 注册全局登录拦截器
+            .initUser()                                                     // 自动加载 :feature-user 模块路由
+            .initShop()                                                     // 自动加载 :feature-shop 模块路由
+            .initApp()                                                      // 自动加载 :app 模块路由
+
+        // 2. 解耦恢复逻辑三部曲
+        val isRestored = NavCenter.restoreState(savedInstanceState) // A. 尝试从进程被杀状态恢复
+        val isIntentHandled = NavCenter.handleIntent(intent)       // B. 尝试从 DeepLink / 推送通知唤起
+
+        // C. 若无进程恢复且无外部唤起，压入根首页
+        if (!isRestored && !isIntentHandled && NavCenter.primaryStack.backstack.isEmpty()) {
+            NavCenter.navigate(HomeScreenDestination())
+        }
 
         setContent {
             MaterialTheme {
                 NavCenter.Render()
             }
         }
+    }
+
+    // 3. 响应后台进程被杀前的栈持久化保存
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        NavCenter.saveState(outState)
+    }
+
+    // 4. 响应 singleTop/singleTask 模式下的外部 Scheme / 推送新唤起
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        NavCenter.handleIntent(intent)
     }
 
     override fun onBackPressed() {
@@ -138,7 +179,53 @@ class MainActivity : ComponentActivity() {
 
 ## 💡 核心使用指南
 
-### 1. 声明页面、必传参数 `@Required` 与局部转场
+### 1. 进程被杀恢复 (Process Death Restoration) 🆕
+
+当用户将 App 切到后台，系统内存不足杀死进程后，框架会自动将导航栈序列化保存。重新打开 App 时会自动恢复所有页面：
+
+```kotlin
+// 1. 在 Activity 销毁前自动持久化当前 Backstack
+override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    NavCenter.saveState(outState)
+}
+
+// 2. 在 onCreate 时一键恢复被杀死前的整个页面栈
+val isRestored = NavCenter.restoreState(savedInstanceState)
+```
+
+---
+
+### 2. DeepLink & 推送通知一键分发 (`IntentResolver`) 🆕
+
+框架通过 `handleIntent` 自动接管 Scheme 与推送唤起。如果你的推送包含复杂的加密 Payload，可实现 `IntentResolver` 策略接口注入：
+
+```kotlin
+// 自定义加密推送 Payload 解析策略
+class CustomPushIntentResolver : IntentResolver {
+    override fun resolve(intent: Intent?): String? {
+        if (intent == null) return null
+        
+        // 优先解析标准的 Scheme URI (如 myapp://shop/detail?id=10086)
+        val schemeUrl = intent.dataString
+        if (!schemeUrl.isNullOrEmpty()) return schemeUrl
+
+        // 解密极光/个推等极光推送 Extra 内部的目标链接
+        val encryptedData = intent.getStringExtra("PUSH_PAYLOAD") ?: return null
+        return decryptPushUrl(encryptedData)
+    }
+}
+
+// 链式配置注入：
+NavCenter.setIntentResolver(CustomPushIntentResolver())
+
+// 触发唤起：
+NavCenter.handleIntent(intent)
+```
+
+---
+
+### 3. 声明页面、必传参数 `@Required` 与局部转场
 
 ```kotlin
 @Serializable
@@ -160,13 +247,13 @@ fun BottomDialogScreen() { ... }
 
 ---
 
-### 2. 自定义 `RouteInterceptor` 拦截器（位于 `:nav-runtime`）
+### 4. 自定义 `RouteInterceptor` 拦截器
 
-实现挂起函数 `intercept`，支持异步网络校验与透明重定向：
+实现 `RouteInterceptor` 接口（归属于 `:nav-runtime`），进行极速同步拦截与透明重定向：
 
 ```kotlin
 class AppLoginInterceptor : RouteInterceptor {
-    override suspend fun intercept(url: String): InterceptResult {
+    override fun intercept(url: String): InterceptResult {
         val uri = Uri.parse(url)
         val path = uri.path?.removePrefix("/") ?: uri.schemeSpecificPart
         val meta = NavRegistry.getMeta(path)
@@ -183,7 +270,7 @@ class AppLoginInterceptor : RouteInterceptor {
 
 ---
 
-### 3. 共享元素形变转场 (Shared Element Transitions)
+### 5. 共享元素形变转场 (Shared Element Transitions)
 
 ```kotlin
 @Composable
@@ -208,7 +295,7 @@ fun HomeScreen() {
 
 ---
 
-### 4. 纯 Kotlin 单元测试 (`Navigator`)
+### 6. 纯 Kotlin 单元测试 (`Navigator`)
 
 ```kotlin
 class HomeViewModel(private val navigator: Navigator) : ViewModel() {
@@ -235,20 +322,27 @@ fun testOpenDetail() {
 
 | API | 功能描述 |
 | :--- | :--- |
+| `NavCenter.init(context)` | 绑定全局上下文 |
+| `NavCenter.saveState(bundle)` | 将当前 Backstack 序列化存入 Bundle（应对进程被杀） 🆕 |
+| `NavCenter.restoreState(bundle)` | 从 Bundle 中恢复被杀前的页面栈，返回恢复结果 🆕 |
+| `NavCenter.handleIntent(intent)` | 一键解析并分发 Scheme / DeepLink / 推送通知跳转 🆕 |
+| `NavCenter.setIntentResolver(resolver)` | 动态设置自定义 DeepLink / 推送解析策略 🆕 |
 | `NavCenter.setFallbackRoute(route)` | 配置 404 路由降级兜底路径 |
+| `NavCenter.addRouteHandler(handler)` | 注册责任链前置处理器（如 WebViewHandler） |
 | `NavCenter.navigate(dest, navOptions)` | 强类型跳转（支持 SingleTop / PopUpTo / ClearTask），支持链式调用 |
 | `NavCenter.navigate(url, navOptions)` | URL 动态跳转（自动 URL 编解码 & 参数匹配），支持链式调用 |
 | `NavCenter.addEntryDecorator(decorator)` | 动态注入页面 Decorator（如 `rememberViewModelStoreNavEntryDecorator`） |
 | `NavCenter.setDefaultTransition(transition)` | 注册全局默认转场动画（如 `DefaultSlideTransition`） |
-| `NavCenter.addGlobalInterceptor(interceptor)` | 动态注册运行时挂起拦截器（`RouteInterceptor`） |
+| `NavCenter.addGlobalInterceptor(interceptor)` | 动态注册运行时拦截器（`RouteInterceptor`） |
 | `NavCenter.initXxx()` | 多模块 KSP 自动生成的流式路由初始化扩展函数 |
 | `Modifier.sharedElementKey(key)` | 为组件绑定共享元素 Key |
-| `NavCenter.pop()` | 栈顶页面出栈 |
-| `NavCenter.popWithResult(key, value)` | 携带结果出栈 |
-| `NavCenter.getResult<T>(key)` | Composable 内部响应式监听回传结果 |
+| `NavCenter.pop()` | 栈顶页面出栈（主线程同步，返回值绝对可靠） |
+| `NavCenter.popWithResult(key, value)` | 携带结果出栈，同步返回布尔状态 |
+| `NavCenter.getResult<T>(key)` | Composable 内部响应式监听回传结果（支持可空 `null` 结果） |
 | `NavCenter.Render()` | 官方 Navigation 3 UI 渲染总入口 |
 
 ---
+
 
 ## 📄 License
 

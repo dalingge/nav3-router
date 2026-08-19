@@ -1,0 +1,34 @@
+// publish.gradle —— GitLab Maven 托管发布共享脚本
+// 由需要发布的框架模块（nav-annotation / nav-runtime / nav-compiler）在 plugins 块之后 apply，
+// 确保本脚本的 afterEvaluate 晚于 AGP 注册，从而能访问 components["release"] / components["java"]。
+apply plugin: 'maven-publish'
+
+afterEvaluate {
+    def moduleName = project.name
+    // JVM 模块发布 java 组件；Android 库发布 release 组件（需配合 singleVariant("release")）
+    def componentName = (moduleName == 'nav-runtime') ? 'release' : 'java'
+
+    publishing {
+        repositories {
+            maven {
+                name = 'GitLab'
+                url = project.findProperty('GITLAB_MAVEN_URL') ?: ''
+                allowInsecureProtocol = true
+                credentials {
+                    // CI 用 gitlab-ci-token + CI_JOB_TOKEN；本地用 Private-Token + GITLAB_TOKEN(PAT)
+                    def isCi = System.getenv('CI_JOB_TOKEN') != null
+                    username = isCi ? 'gitlab-ci-token' : 'Private-Token'
+                    password = System.getenv('CI_JOB_TOKEN') ?: project.findProperty('GITLAB_TOKEN') ?: ''
+                }
+            }
+        }
+        publications {
+            maven(MavenPublication) {
+                from components[componentName]
+                groupId = 'com.yiqun.nav'
+                artifactId = moduleName
+                version = project.findProperty('NAV_ROUTER_VERSION') ?: '0.0.1-SNAPSHOT'
+            }
+        }
+    }
+}

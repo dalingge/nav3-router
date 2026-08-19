@@ -1,0 +1,20 @@
+# GitLab CI 发布流水线：打 tag 时自动发布框架模块到 GitLab Maven 仓库
+stages:
+  - publish
+
+publish:
+  stage: publish
+  # 镜像需包含 JDK 17+ 与 Android SDK 36（nav-runtime 为 Android 库）。
+  # 请根据实际 runner 环境调整，例如替换为团队自定义的 Android CI 镜像。
+  image: bitriseio/docker-android:latest
+  rules:
+    # 仅在打 tag 时触发发布
+    - if: $CI_COMMIT_TAG
+  script:
+    # 版本号直接取 tag 名（去掉可能的 v 前缀），覆盖 gradle.properties 中的默认值
+    - ./gradlew publish -PNAV_ROUTER_VERSION="${CI_COMMIT_TAG#v}" --no-daemon --stacktrace
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - .gradle/wrapper
+      - .gradle/caches
