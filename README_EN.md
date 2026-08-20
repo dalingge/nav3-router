@@ -90,9 +90,9 @@ plugins {
 
 dependencies {
     // Nav3-Router core
-    implementation("io.github.dalingge:nav-annotation:1.0.0")  // pure annotation module
-    implementation("io.github.dalingge:nav-runtime:1.0.0")     // runtime core module
-    ksp("io.github.dalingge:nav-compiler:1.0.0")               // KSP compiler
+    implementation("io.github.dalingge:nav-annotation:1.0.1")  // pure annotation module
+    implementation("io.github.dalingge:nav-runtime:1.0.1")     // runtime core module
+    ksp("io.github.dalingge:nav-compiler:1.0.1")               // KSP compiler
 
     // Official Navigation 3 lifecycle
     implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:1.1.4")

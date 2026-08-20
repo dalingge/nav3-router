@@ -90,9 +90,9 @@ plugins {
 
 dependencies {
     // Nav3-Router 核心
-    implementation("io.github.dalingge:nav-annotation:1.0.0")  // 纯注解模块
-    implementation("io.github.dalingge:nav-runtime:1.0.0")     // 运行时核心模块
-    ksp("io.github.dalingge:nav-compiler:1.0.0")               // KSP 编译器
+    implementation("io.github.dalingge:nav-annotation:1.0.1")  // 纯注解模块
+    implementation("io.github.dalingge:nav-runtime:1.0.1")     // 运行时核心模块
+    ksp("io.github.dalingge:nav-compiler:1.0.1")               // KSP 编译器
 
     // 官方 Navigation 3 生命周期库
     implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:1.1.4")
