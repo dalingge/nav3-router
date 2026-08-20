@@ -1,5 +1,7 @@
 # Nav3-Router 🚀
 
+简体中文 · [English](README_EN.md)
+
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-7F52FF.svg?logo=kotlin)](https://kotlinlang.org)
 [![Android Navigation 3](https://img.shields.io/badge/Jetpack-Navigation%203%20v1.1.4-4285F4.svg?logo=android)](https://developer.android.com/jetpack/compose)
 [![KSP](https://img.shields.io/badge/KSP-2.3.10-brightgreen.svg)](https://kotlinlang.org/docs/ksp-overview.html)
@@ -8,22 +10,6 @@
 **Nav3-Router** 是一套基于 **Android 官方 Navigation 3 (`androidx.navigation3:1.1.4`)** 状态驱动引擎打造的新一代轻量级、响应式双轨路由与导航框架。
 
 它融合了 **KSP 编译期类型安全** 与 **动态 URL 解耦路由**，内置高级栈控制、声明式解耦拦截链、**进程被杀栈恢复**、**DeepLink/推送一键分发**、**编译期查重与必传参数防御**、**404 容错降级**、**主线程同步安全锁**、**全局/局部双层转场动画**、**原生共享元素形变转场（Shared Element）** 以及 `NavEntryDecorator` 装饰器洋葱皮体系。
-
----
-
-## 📦 发布到 Maven Central
-
-框架三个模块（`nav-annotation`、`nav-runtime`、`nav-compiler`）发布到 Maven Central，供其他项目引用。
-
-消费端**零配置**，直接声明依赖即可：
-
-```kotlin
-dependencies {
-    implementation("io.github.dalingge:nav-annotation:1.0.0")
-    implementation("io.github.dalingge:nav-runtime:1.0.0")
-    ksp("io.github.dalingge:nav-compiler:1.0.0")
-}
-```
 
 ---
 
@@ -90,9 +76,11 @@ dependencies {
 
 ---
 
-## 🛠️ 快速集成
+## 🚀 快速开始
 
-### 1. 引入 Gradle 依赖
+### 1. 添加依赖
+
+框架已发布到 **Maven Central**，在 `build.gradle.kts` 中声明依赖即可：
 
 ```kotlin
 plugins {
@@ -101,21 +89,25 @@ plugins {
 }
 
 dependencies {
-    // 官方 Navigation 3 核心库
-    implementation("androidx.navigation3:navigation3:1.1.4")
+    // Nav3-Router 核心
+    implementation("io.github.dalingge:nav-annotation:1.0.0")  // 纯注解模块
+    implementation("io.github.dalingge:nav-runtime:1.0.0")     // 运行时核心模块
+    ksp("io.github.dalingge:nav-compiler:1.0.0")               // KSP 编译器
+
+    // 官方 Navigation 3 生命周期库
     implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:1.1.4")
-    
-    // Router 模块划分
-    implementation(project(":nav-annotation")) // 纯注解模块
-    implementation(project(":nav-runtime"))    // 运行时核心模块
-    ksp(project(":nav-compiler"))              // KSP 编译器
-    
+
     // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 }
+
+// 多模块项目需配置模块名，用于生成 NavCenter.initXxx() 扩展函数
+ksp {
+    arg("NAV_MODULE_NAME", "user")
+}
 ```
 
-### 2. 企业级旗舰初始化 (含进程恢复、DeepLink 分发与 404 降级)
+### 2. 初始化 (含进程恢复、DeepLink 分发与 404 降级)
 
 在 `MainActivity` 中通过 `NavCenter` 链式 API 完成配置与恢复解耦：
 
