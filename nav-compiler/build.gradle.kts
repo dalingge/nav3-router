@@ -11,5 +11,3 @@ dependencies {
     compileOnly("com.google.auto.service:auto-service-annotations:1.1.1")
     ksp("dev.zacsweers.autoservice:auto-service-ksp:1.2.0")
 }
-
-apply(from = rootProject.file("publish.gradle"))

@@ -11,33 +11,17 @@
 
 ---
 
-## 📦 发布到 GitHub Packages
+## 📦 发布到 Maven Central
 
-框架三个模块（`nav-annotation`、`nav-runtime`、`nav-compiler`）发布到 GitHub Packages，供其他项目引用。
+框架三个模块（`nav-annotation`、`nav-runtime`、`nav-compiler`）发布到 Maven Central，供其他项目引用。
 
-消费项目的 `settings.gradle.kts` 声明仓库（`<OWNER>`/`<REPO>` 替换为实际值）：
-
-```kotlin
-dependencyResolutionManagement {
-    repositories {
-        maven {
-            url = uri("https://maven.pkg.github.com/<OWNER>/<REPO>")
-            credentials {
-                username = "<GitHub 用户名>"
-                password = "<PAT>"
-            }
-        }
-    }
-}
-```
-
-`build.gradle.kts` 声明依赖：
+消费端**零配置**，直接声明依赖即可：
 
 ```kotlin
 dependencies {
-    implementation("com.yiqun.nav:nav-annotation:1.0.0")
-    implementation("com.yiqun.nav:nav-runtime:1.0.0")
-    ksp("com.yiqun.nav:nav-compiler:1.0.0")
+    implementation("io.github.dalingge:nav-annotation:1.0.0")
+    implementation("io.github.dalingge:nav-runtime:1.0.0")
+    ksp("io.github.dalingge:nav-compiler:1.0.0")
 }
 ```
 
