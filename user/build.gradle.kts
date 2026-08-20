@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.yiqun.user"
+    namespace = "com.dalingge.user"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1

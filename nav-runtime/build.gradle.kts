@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.yiqun.nav.runtime"
+    namespace = "com.dalingge.nav.runtime"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
