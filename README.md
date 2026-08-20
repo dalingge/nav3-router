@@ -11,12 +11,27 @@
 
 ---
 
-## 📦 发布到 GitLab Maven 仓库
+## 📦 发布到 GitHub Packages
 
-框架三个模块（`nav-annotation`、`nav-runtime`、`nav-compiler`）支持发布到 GitLab Maven 仓库（Package Registry），供其他项目作为依赖库引用。
+框架三个模块（`nav-annotation`、`nav-runtime`、`nav-compiler`）发布到 GitHub Packages，供其他项目引用。
 
+消费项目的 `settings.gradle.kts` 声明仓库（`<OWNER>`/`<REPO>` 替换为实际值）：
 
-在 `build.gradle.kts` 中声明依赖：
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        maven {
+            url = uri("https://maven.pkg.github.com/<OWNER>/<REPO>")
+            credentials {
+                username = "<GitHub 用户名>"
+                password = "<PAT>"
+            }
+        }
+    }
+}
+```
+
+`build.gradle.kts` 声明依赖：
 
 ```kotlin
 dependencies {
