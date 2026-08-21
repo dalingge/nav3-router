@@ -17,31 +17,19 @@ It combines **KSP compile-time type safety** with **dynamic URL decoupled routin
 
 The project strictly follows modular boundaries with high cohesion and low coupling:
 
-```text
-┌────────────────────────────────────────────────────────────┐
-│              App business layer (UI & ViewModels)          │
-└────────────────────────────┬───────────────────────────────┘
-                             │ (fluent DSL init & dual-track navigation)
-┌────────────────────────────▼───────────────────────────────┐
-│              Framework runtime (:nav-runtime)              │
-│  - Minimal chainable config bus (NavCenter)                │
-│  - Process death restore (saveState / restoreState)        │
-│  - DeepLink / push dispatch (handleIntent & IntentResolver)│
-│  - 404 fallback & chain of responsibility (RouteHandler)   │
-│  - Runtime interceptor (RouteInterceptor) & decorator      │
-└────────────────────────────┬───────────────────────────────┘
-                             │ (KSP compile-time scanning)
-┌────────────────────────────▼───────────────────────────────┐
-│           Pure annotation module (:nav-annotation)         │
-│  - @Screen (pure compile-time route marker)                │
-│  - @Required (required-parameter validation marker)        │
-└────────────────────────────┬───────────────────────────────┘
-                             │ (low-level delegation)
-┌────────────────────────────▼───────────────────────────────┐
-│         Android official engine (androidx.navigation3)     │
-│  - NavDisplay (scene rendering / multi-pane / restore)     │
-│  - NavEntry (official ViewModelStoreOwner & persistence)   │
-└────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    A["<b>App Business Layer</b><br>UI & ViewModels"] 
+    -->|"Fluent DSL init & dual-track navigation"| B["<b>Framework Runtime</b> (:nav-runtime)<br>• NavCenter: Minimal chainable config bus<br>• saveState / restoreState: Process death recovery<br>• handleIntent & IntentResolver: DeepLink/push dispatch<br>• RouteHandler: 404 fallback & chain of responsibility<br>• RouteInterceptor & NavEntry: Runtime interceptors & decorators"]
+    
+    B -->|"KSP compile-time scanning"| C["<b>Pure Annotation Module</b> (:nav-annotation)<br>• @Screen: Compile-time route marker<br>• @Required: Parameter validation marker"]
+    
+    C -->|"Low-level delegation"| D["<b>Android Official Engine</b> (androidx.navigation3)<br>• NavDisplay: Scene rendering / multi-pane / auto restore<br>• NavEntry: Official ViewModelStoreOwner & state persistence"]
+
+    style A fill:#e1f5fe,stroke:#0288d1,stroke-width:1.5px
+    style B fill:#fff3e0,stroke:#f57c00,stroke-width:1.5px
+    style C fill:#f3e5f5,stroke:#7b1fa2,stroke-width:1.5px
+    style D fill:#e8f5e9,stroke:#388e3c,stroke-width:1.5px
 ```
 
 ---

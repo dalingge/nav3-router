@@ -25,23 +25,23 @@ graph TD
 
     subgraph Runtime ["框架运行时 (:nav-runtime)"]
         direction TB
-        RT1["- 极简链式配置总线 (NavCenter)"]
-        RT2["- 进程被杀恢复 (saveState / restoreState)"]
-        RT3["- DeepLink / 推送一键分发"]
-        RT4["- 404 容错降级与责任链 (RouteHandler)"]
-        RT5["- 运行时拦截链与装饰器 (NavEntry)"]
+        RT1["极简链式配置总线 (NavCenter)"]
+        RT2["进程被杀恢复 (saveState / restoreState)"]
+        RT3["DeepLink / 推送一键分发"]
+        RT4["404 容错降级与责任链 (RouteHandler)"]
+        RT5["运行时拦截链与装饰器 (NavEntry)"]
     end
 
     subgraph Annotation ["纯净注解模块 (:nav-annotation)"]
         direction TB
-        AN1["- @Screen (纯编译期路由标记)"]
-        AN2["- @Required (必传参数校验标记)"]
+        AN1["@Screen (纯编译期路由标记)"]
+        AN2["@Required (必传参数校验标记)"]
     end
 
     subgraph Engine ["Android 官方引擎 (androidx.navigation3)"]
         direction TB
-        EN1["- NavDisplay (场景渲染 / 多窗格 / 状态恢复)"]
-        EN2["- NavEntry (官方 ViewModelStoreOwner)"]
+        EN1["-avDisplay (场景渲染 / 多窗格 / 状态恢复)"]
+        EN2["NavEntry (官方 ViewModelStoreOwner)"]
     end
 
     UI ==>|"流式 DSL 链式初始化 & 双轨跳转"| Runtime
