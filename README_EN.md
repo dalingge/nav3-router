@@ -19,17 +19,40 @@ The project strictly follows modular boundaries with high cohesion and low coupl
 
 ```mermaid
 graph TD
-    A["<b>App Business Layer</b><br>UI & ViewModels"] 
-    -->|"Fluent DSL init & dual-track navigation"| B["<b>Framework Runtime</b> (:nav-runtime)<br>• NavCenter: Minimal chainable config bus<br>• saveState / restoreState: Process death recovery<br>• handleIntent & IntentResolver: DeepLink/push dispatch<br>• RouteHandler: 404 fallback & chain of responsibility<br>• RouteInterceptor & NavEntry: Runtime interceptors & decorators"]
-    
-    B -->|"KSP compile-time scanning"| C["<b>Pure Annotation Module</b> (:nav-annotation)<br>• @Screen: Compile-time route marker<br>• @Required: Parameter validation marker"]
-    
-    C -->|"Low-level delegation"| D["<b>Android Official Engine</b> (androidx.navigation3)<br>• NavDisplay: Scene rendering / multi-pane / auto restore<br>• NavEntry: Official ViewModelStoreOwner & state persistence"]
+    subgraph UI ["App business layer (UI & ViewModels)"]
+        direction TB
+    end
 
-    style A fill:#e1f5fe,stroke:#0288d1,stroke-width:1.5px
-    style B fill:#fff3e0,stroke:#f57c00,stroke-width:1.5px
-    style C fill:#f3e5f5,stroke:#7b1fa2,stroke-width:1.5px
-    style D fill:#e8f5e9,stroke:#388e3c,stroke-width:1.5px
+    subgraph Runtime ["Framework runtime (:nav-runtime) "]
+        direction TB
+        RT1["Minimal chainable config bus (NavCenter)"]
+        RT2["Process death restore (saveState / restoreState) "]
+        RT3["DeepLink / push dispatch (handleIntent & IntentResolver)"]
+        RT4["404 fallback & chain of responsibility (RouteHandler)"]
+        RT5["Runtime interceptor (RouteInterceptor) & decorator"]
+    end
+
+    subgraph Annotation ["Pure annotation module (:nav-annotation)"]
+        direction TB
+        AN1["@Screen (pure compile-time route marker) "]
+        AN2["@Required (required-parameter validation marker)"]
+        AN3["@Service (pure compile-time route marker) "]
+    end
+
+    subgraph Engine ["Android official engine (androidx.navigation3)"]
+        direction TB
+        EN1["NavDisplay (scene rendering / multi-pane / restore) "]
+        EN2["NavEntry (official ViewModelStoreOwner & persistence)"]
+    end
+
+    UI ==>|"fluent DSL init & dual-track navigation"| Runtime
+    Runtime ==>|"KSP compile-time scanning"| Annotation
+    Annotation ==>|"low-level delegation"| Engine
+
+    style UI fill:#f9f,stroke:#333,stroke-width:2px
+    style Runtime fill:#bbf,stroke:#333,stroke-width:2px
+    style Annotation fill:#fbf,stroke:#333,stroke-width:2px
+    style Engine fill:#bfb,stroke:#333,stroke-width:2px
 ```
 
 ---

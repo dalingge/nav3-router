@@ -36,11 +36,12 @@ graph TD
         direction TB
         AN1["@Screen (纯编译期路由标记)"]
         AN2["@Required (必传参数校验标记)"]
+        AN3["@Service (纯编译期路由标记)"] 
     end
 
     subgraph Engine ["Android 官方引擎 (androidx.navigation3)"]
         direction TB
-        EN1["-avDisplay (场景渲染 / 多窗格 / 状态恢复)"]
+        EN1["NavDisplay (场景渲染 / 多窗格 / 状态恢复)"]
         EN2["NavEntry (官方 ViewModelStoreOwner)"]
     end
 
