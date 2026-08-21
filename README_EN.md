@@ -389,6 +389,68 @@ NavCenter.navigate(DetailScreenDestination(detailId = 100, user = user)) {
 }
 ```
 
+### 4. Global Overlay layer (`showOverlay` & `dismissOverlay`)
+
+In a `NavDisplay`-based navigation system, each `@Screen`-annotated page is recognized as a brand-new route Scene. If you want to show a cashier, a global loading indicator, or a version-update dialog **without switching the current route and keeping the background page fully visible**, use the global Overlay layer mechanism.
+
+**Use cases:**
+
+* **Cross-module service dialogs**: e.g. `:feature-pay` provides a cashier, and `:feature-shop` slides it in above the current checkout page, keeping the checkout page as a fully visible background.
+* **Global loading / status dialogs**: an overlay prompt that ignores the current route page.
+* **Global update / announcement dialogs**: does not consume route `backstack` depth and lives independently of the navigation stack.
+
+**A. Show a global Overlay layer:**
+
+```kotlin
+// Call from a Service implementation, ViewModel, or anywhere — the layer stacks on top of the visible page
+NavCenter.showOverlay {
+    // Put any pure Compose dialog component here (e.g. ModalBottomSheet / Dialog)
+    PayDialog(
+        orderId = "ORDER_10086",
+        amount = 199.0,
+        onPaySuccess = {
+            NavCenter.dismissOverlay() // close the layer
+            NavCenter.popWithResult("pay_result", true) // pass back the result
+        },
+        onDismiss = {
+            NavCenter.dismissOverlay() // close the layer
+        }
+    )
+}
+```
+
+**B. Dismiss the global Overlay layer:**
+
+```kotlin
+NavCenter.dismissOverlay()
+```
+
+**C. Elegant usage in a `:feature-pay` cross-module service** (combined with `PayService` discovery for zero-UI-coupling dialogs on top of the current page):
+
+```kotlin
+@Service(contract = PayService::class, path = "pay/service")
+class PayServiceImpl : PayService {
+
+    override fun showPayDialog(orderId: String, amount: Double) {
+        // Show the cashier directly above the current active page
+        NavCenter.showOverlay {
+            PayDialog(
+                orderId = orderId,
+                amount = amount,
+                onPaySuccess = {
+                    NavCenter.dismissOverlay()
+                    NavCenter.popWithResult("pay_result", true)
+                },
+                onDismiss = {
+                    NavCenter.dismissOverlay()
+                    NavCenter.popWithResult("pay_result", false)
+                }
+            )
+        }
+    }
+}
+```
+
 ---
 
 ## 📖 API Quick Reference
@@ -418,6 +480,9 @@ NavCenter.navigate(DetailScreenDestination(detailId = 100, user = user)) {
 | `NavCenter.addPathReplaceService(service)` | Register a dynamic path/URL rewriting strategy (A/B testing, dynamic mapping) 🆕 |
 | `NavCenter.navigate(dest) { greenChannel = true }` | Enable green channel to skip all interceptors and force-navigate to the target 🆕 |
 | `@Service(contract = KClass, path = "")` | Cross-module service exposure annotation; KSP auto-registers the implementation at compile time 🆕 |
+| `NavCenter.showOverlay { content }` | Stack any Compose layer above the current active page (keeping the background visible) 🆕 |
+| `NavCenter.dismissOverlay()` | Dismiss the current global Overlay layer 🆕 |
+| `NavCenter.currentOverlay` | Composable state object of the current layer (for custom rendering) 🆕 |
 
 ---
 

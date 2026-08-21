@@ -134,7 +134,7 @@ class NavSymbolProcessor(
 
                 val typeStr = type.toString()
                 when (typeStr) {
-                    "kotlin.Int", "kotlin.Boolean", "kotlin.Long" ->
+                    "kotlin.Int", "kotlin.Boolean", "kotlin.Long" , "kotlin.Double" , "kotlin.Float"  ->
                         toUrlCode.append("$name=\$$name&")
                     "kotlin.String" ->
                         toUrlCode.append("$name=\${java.net.URLEncoder.encode($name, \"UTF-8\")}&")
@@ -201,6 +201,8 @@ class NavSymbolProcessor(
                     "kotlin.Int" -> "$pName = params[\"$pName\"]?.toIntOrNull() ?: 0"
                     "kotlin.Boolean" -> "$pName = params[\"$pName\"]?.toBooleanStrictOrNull() ?: false"
                     "kotlin.Long" -> "$pName = params[\"$pName\"]?.toLongOrNull() ?: 0L"
+                    "kotlin.Double" -> "$pName = params[\"$pName\"]?.toDoubleOrNull() ?: 0.0"
+                    "kotlin.Float" -> "$pName = params[\"$pName\"]?.toFloatOrNull() ?: 0.0f"
                     "kotlin.String" -> {
                         if (isRequired) {
                             // 必传参数若为空则抛出显式 IllegalStateException

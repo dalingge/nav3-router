@@ -5,8 +5,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.compose.animation.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
@@ -154,6 +157,20 @@ object NavCenter : Navigator {
     fun addPathReplaceService(service: PathReplaceService): NavCenter {
         this.pathReplaceServices.add(service)
         return this
+    }
+
+    // 全局 Overlay 浮层 Composable State
+    var currentOverlay by mutableStateOf<(@Composable () -> Unit)?>(null)
+        private set
+
+    /** 在当前页面之上打开一个全局 Dialog/BottomSheet 浮层 */
+    fun showOverlay(content: @Composable () -> Unit) {
+        currentOverlay = content
+    }
+
+    /** 关闭当前全局浮层 */
+    fun dismissOverlay() {
+        currentOverlay = null
     }
 
     override fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)?): NavCenter {
@@ -339,7 +356,13 @@ object NavCenter : Navigator {
 
     @Composable
     fun Render() {
-        NavHostContainer(stack = primaryStack)
+        Box(modifier = Modifier.fillMaxSize()) {
+            //  渲染当前页面 (如 CheckoutScreen)
+            NavHostContainer(stack = primaryStack)
+
+            // 在当前页面之上叠加渲染 Dialog / BottomSheet 浮层！
+            currentOverlay?.invoke()
+        }
     }
 }
 

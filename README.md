@@ -389,6 +389,68 @@ NavCenter.navigate(DetailScreenDestination(detailId = 100, user = user)) {
 }
 ```
 
+### 4. 全局 Overlay 浮层机制 (`showOverlay` & `dismissOverlay`)
+
+在基于 `NavDisplay` 的导航体系中，标注了 `@Screen` 的页面会被识别为一个全新的路由 Scene。如果希望在**不切换当前路由页面、保持背景当前页完整可见**的前提下，跨模块弹出收银台、全局 Loading、版本更新弹窗等，可以使用全局 Overlay 浮层机制。
+
+**使用场景：**
+
+* **跨模块服务化弹窗**：如在 `:feature-pay` 模块中提供收银台，`:feature-shop` 调用时直接在当前结算页上方滑出弹窗，结算页作为背景完整保留。
+* **全局加载/状态弹窗**：全局无视路由页面的浮层提示。
+* **全局更新/公告弹窗**：不占用路由 `backstack` 深度，独立于导航栈之外。
+
+**A. 弹出全局 Overlay 浮层：**
+
+```kotlin
+// 在 Service 实现类、ViewModel 或任意位置调用，浮层将直接叠加在当前可见页面最上方
+NavCenter.showOverlay {
+    // 放入任意纯 Compose 弹窗组件 (如 ModalBottomSheet / Dialog)
+    PayDialog(
+        orderId = "ORDER_10086",
+        amount = 199.0,
+        onPaySuccess = {
+            NavCenter.dismissOverlay() // 关闭浮层
+            NavCenter.popWithResult("pay_result", true) // 回传结果
+        },
+        onDismiss = {
+            NavCenter.dismissOverlay() // 关闭浮层
+        }
+    )
+}
+```
+
+**B. 关闭全局 Overlay 浮层：**
+
+```kotlin
+NavCenter.dismissOverlay()
+```
+
+**C. 在 `:feature-pay` 跨模块服务中的优雅运用**（结合 `PayService` 服务发现，实现零 UI 耦合拉起当前页弹窗）：
+
+```kotlin
+@Service(contract = PayService::class, path = "pay/service")
+class PayServiceImpl : PayService {
+
+    override fun showPayDialog(orderId: String, amount: Double) {
+        // 直接在当前活跃页面上方弹出收银台
+        NavCenter.showOverlay {
+            PayDialog(
+                orderId = orderId,
+                amount = amount,
+                onPaySuccess = {
+                    NavCenter.dismissOverlay()
+                    NavCenter.popWithResult("pay_result", true)
+                },
+                onDismiss = {
+                    NavCenter.dismissOverlay()
+                    NavCenter.popWithResult("pay_result", false)
+                }
+            )
+        }
+    }
+}
+```
+
 ---
 
 ## 📖 API 速查表
@@ -418,6 +480,9 @@ NavCenter.navigate(DetailScreenDestination(detailId = 100, user = user)) {
 | `NavCenter.addPathReplaceService(service)` | 注册动态路径/URL 重写策略（用于 A/B 测试、动态映射） 🆕 |
 | `NavCenter.navigate(dest) { greenChannel = true }` | 开启绿色通道，跳转时跳过所有拦截器强行直达目标页 🆕 |
 | `@Service(contract = KClass, path = "")` | 跨模块服务暴露注解，KSP 编译期自动注册服务实现 🆕 |
+| `NavCenter.showOverlay { content }` | 在当前活跃页面之上叠加任意 Compose 浮层（保持背景当前页可见） 🆕 |
+| `NavCenter.dismissOverlay()` | 关闭当前全局 Overlay 浮层 🆕 |
+| `NavCenter.currentOverlay` | 当前浮层的 Composable 状态对象（用于自定义渲染逻辑） 🆕 |
 
 ---
 

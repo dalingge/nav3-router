@@ -22,6 +22,7 @@ import com.dalingge.nav.annotation.Screen
 import com.dalingge.nav.runtime.NavCenter
 import com.dalingge.nav.runtime.SharedElementTransition
 import com.dalingge.nav.runtime.sharedElementKey
+import kotlinx.coroutines.launch
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
@@ -36,7 +37,19 @@ import java.nio.charset.StandardCharsets
 fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val result by NavCenter.getResult<String>("result_key")
 
+    val payResult by NavCenter.getResult<Boolean>("pay_result")
+
     val imageUrl = "image_10086"
+
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(payResult) {
+        if (payResult == true) {
+            println("🎉 收到回调：用户支付成功！跳转到订单成功页")
+        } else if (payResult == false) {
+            println("❌ 收到回调：用户取消了支付")
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -72,8 +85,13 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 
 
         Button(onClick = {
-            val payService = NavCenter.getService<PayService>()
-            payService?.pay("10086", 199.0)
+            scope.launch {
+                val payService = NavCenter.getService<PayService>()
+                val isPay = payService?.pay("10086", 199.0)?:false
+                if (isPay){
+                    payService.showPayDialog(orderId = "10086", amount = 199.0)
+                }
+            }
         }) {
             Text("跨模块服务请求")
         }
