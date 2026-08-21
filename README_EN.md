@@ -309,7 +309,7 @@ fun testOpenDetail() {
 
 ---
 
-## 🚀 Enterprise Advanced Features
+## 🚀  Advanced Features
 
 ### 1. Cross-module UI-less service discovery (`@Service` & `IService`)
 
