@@ -17,31 +17,41 @@
 
 项目严格遵循高内聚、低耦合的模块化边界划分：
 
-```text
-┌──────────────────────────────────────────────────────────┐
-│                   App 业务层 (UI & ViewModels)            │
-└────────────────────────────┬─────────────────────────────┘
-                             │ (流式 DSL 链式初始化 & 双轨跳转)
-┌────────────────────────────▼─────────────────────────────┐
-│                 框架运行时 (:nav-runtime)                  │
-│  - 极简链式配置总线 (NavCenter)                            │
-│  - 进程被杀恢复 (saveState / restoreState)                │
-│  - DeepLink / 推送一键分发 (handleIntent & IntentResolver)│
-│  - 404 容错降级与责任链 (RouteHandler)                     │
-│  - 运行时拦截链 (RouteInterceptor) 与装饰器 (NavEntry)     │
-└────────────────────────────┬─────────────────────────────┘
-                             │ (KSP 编译期扫描)
-┌────────────────────────────▼─────────────────────────────┐
-│               纯净注解模块 (:nav-annotation)               │
-│  - @Screen (纯编译期路由标记)                              │
-│  - @Required (必传参数校验标记)                            │
-└────────────────────────────┬─────────────────────────────┘
-                             │ (底层代理)
-┌────────────────────────────▼─────────────────────────────┐
-│             Android 官方引擎 (androidx.navigation3)         │
-│  - NavDisplay (场景渲染 / 多窗格分屏 / 状态自动恢复)         │
-│  - NavEntry (官方 ViewModelStoreOwner & 状态持久化)        │
-└──────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph UI ["App 业务层 (UI & ViewModels)"]
+        direction TB
+    end
+
+    subgraph Runtime ["框架运行时 (:nav-runtime)"]
+        direction TB
+        RT1["- 极简链式配置总线 (NavCenter)"]
+        RT2["- 进程被杀恢复 (saveState / restoreState)"]
+        RT3["- DeepLink / 推送一键分发"]
+        RT4["- 404 容错降级与责任链 (RouteHandler)"]
+        RT5["- 运行时拦截链与装饰器 (NavEntry)"]
+    end
+
+    subgraph Annotation ["纯净注解模块 (:nav-annotation)"]
+        direction TB
+        AN1["- @Screen (纯编译期路由标记)"]
+        AN2["- @Required (必传参数校验标记)"]
+    end
+
+    subgraph Engine ["Android 官方引擎 (androidx.navigation3)"]
+        direction TB
+        EN1["- NavDisplay (场景渲染 / 多窗格 / 状态恢复)"]
+        EN2["- NavEntry (官方 ViewModelStoreOwner)"]
+    end
+
+    UI ==>|"流式 DSL 链式初始化 & 双轨跳转"| Runtime
+    Runtime ==>|"KSP 编译期扫描"| Annotation
+    Annotation ==>|"底层代理"| Engine
+
+    style UI fill:#f9f,stroke:#333,stroke-width:2px
+    style Runtime fill:#bbf,stroke:#333,stroke-width:2px
+    style Annotation fill:#fbf,stroke:#333,stroke-width:2px
+    style Engine fill:#bfb,stroke:#333,stroke-width:2px
 ```
 
 ---
@@ -170,7 +180,7 @@ class MainActivity : ComponentActivity() {
 
 ## 💡 核心使用指南
 
-### 1. 进程被杀恢复 (Process Death Restoration) 🆕
+### 1. 进程被杀恢复 (Process Death Restoration) 
 
 当用户将 App 切到后台，系统内存不足杀死进程后，框架会自动将导航栈序列化保存。重新打开 App 时会自动恢复所有页面：
 
@@ -187,7 +197,7 @@ val isRestored = NavCenter.restoreState(savedInstanceState)
 
 ---
 
-### 2. DeepLink & 推送通知一键分发 (`IntentResolver`) 🆕
+### 2. DeepLink & 推送通知一键分发 (`IntentResolver`) 
 
 框架通过 `handleIntent` 自动接管 Scheme 与推送唤起。如果你的推送包含复杂的加密 Payload，可实现 `IntentResolver` 策略接口注入：
 
@@ -458,10 +468,10 @@ class PayServiceImpl : PayService {
 | API | 功能描述 |
 | :--- | :--- |
 | `NavCenter.init(context)` | 绑定全局上下文 |
-| `NavCenter.saveState(bundle)` | 将当前 Backstack 序列化存入 Bundle（应对进程被杀） 🆕 |
-| `NavCenter.restoreState(bundle)` | 从 Bundle 中恢复被杀前的页面栈，返回恢复结果 🆕 |
-| `NavCenter.handleIntent(intent)` | 一键解析并分发 Scheme / DeepLink / 推送通知跳转 🆕 |
-| `NavCenter.setIntentResolver(resolver)` | 动态设置自定义 DeepLink / 推送解析策略 🆕 |
+| `NavCenter.saveState(bundle)` | 将当前 Backstack 序列化存入 Bundle（应对进程被杀） |
+| `NavCenter.restoreState(bundle)` | 从 Bundle 中恢复被杀前的页面栈，返回恢复结果 |
+| `NavCenter.handleIntent(intent)` | 一键解析并分发 Scheme / DeepLink / 推送通知跳转 |
+| `NavCenter.setIntentResolver(resolver)` | 动态设置自定义 DeepLink / 推送解析策略  |
 | `NavCenter.setFallbackRoute(route)` | 配置 404 路由降级兜底路径 |
 | `NavCenter.addRouteHandler(handler)` | 注册责任链前置处理器（如 WebViewHandler） |
 | `NavCenter.navigate(dest, navOptions)` | 强类型跳转（支持 SingleTop / PopUpTo / ClearTask），支持链式调用 |
@@ -475,14 +485,14 @@ class PayServiceImpl : PayService {
 | `NavCenter.popWithResult(key, value)` | 携带结果出栈，同步返回布尔状态 |
 | `NavCenter.getResult<T>(key)` | Composable 内部响应式监听回传结果（支持可空 `null` 结果） |
 | `NavCenter.Render()` | 官方 Navigation 3 UI 渲染总入口 |
-| `NavCenter.getService<T>()` | 跨模块按接口 Class 发现并获取无 UI 服务实例（0 反射） 🆕 |
-| `NavCenter.getService<T>(path)` | 跨模块按 Path 字符串发现并获取服务实例 🆕 |
-| `NavCenter.addPathReplaceService(service)` | 注册动态路径/URL 重写策略（用于 A/B 测试、动态映射） 🆕 |
-| `NavCenter.navigate(dest) { greenChannel = true }` | 开启绿色通道，跳转时跳过所有拦截器强行直达目标页 🆕 |
-| `@Service(contract = KClass, path = "")` | 跨模块服务暴露注解，KSP 编译期自动注册服务实现 🆕 |
-| `NavCenter.showOverlay { content }` | 在当前活跃页面之上叠加任意 Compose 浮层（保持背景当前页可见） 🆕 |
-| `NavCenter.dismissOverlay()` | 关闭当前全局 Overlay 浮层 🆕 |
-| `NavCenter.currentOverlay` | 当前浮层的 Composable 状态对象（用于自定义渲染逻辑） 🆕 |
+| `NavCenter.getService<T>()` | 跨模块按接口 Class 发现并获取无 UI 服务实例（0 反射） |
+| `NavCenter.getService<T>(path)` | 跨模块按 Path 字符串发现并获取服务实例 |
+| `NavCenter.addPathReplaceService(service)` | 注册动态路径/URL 重写策略（用于 A/B 测试、动态映射） |
+| `NavCenter.navigate(dest) { greenChannel = true }` | 开启绿色通道，跳转时跳过所有拦截器强行直达目标页 |
+| `@Service(contract = KClass, path = "")` | 跨模块服务暴露注解，KSP 编译期自动注册服务实现 |
+| `NavCenter.showOverlay { content }` | 在当前活跃页面之上叠加任意 Compose 浮层（保持背景当前页可见）  |
+| `NavCenter.dismissOverlay()` | 关闭当前全局 Overlay 浮层 |
+| `NavCenter.currentOverlay` | 当前浮层的 Composable 状态对象（用于自定义渲染逻辑） |
 
 ---
 

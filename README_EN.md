@@ -18,30 +18,30 @@ It combines **KSP compile-time type safety** with **dynamic URL decoupled routin
 The project strictly follows modular boundaries with high cohesion and low coupling:
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│              App business layer (UI & ViewModels)        │
-└────────────────────────────┬─────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│              App business layer (UI & ViewModels)          │
+└────────────────────────────┬───────────────────────────────┘
                              │ (fluent DSL init & dual-track navigation)
-┌────────────────────────────▼─────────────────────────────┐
-│              Framework runtime (:nav-runtime)             │
-│  - Minimal chainable config bus (NavCenter)              │
-│  - Process death restore (saveState / restoreState)      │
+┌────────────────────────────▼───────────────────────────────┐
+│              Framework runtime (:nav-runtime)              │
+│  - Minimal chainable config bus (NavCenter)                │
+│  - Process death restore (saveState / restoreState)        │
 │  - DeepLink / push dispatch (handleIntent & IntentResolver)│
-│  - 404 fallback & chain of responsibility (RouteHandler)  │
+│  - 404 fallback & chain of responsibility (RouteHandler)   │
 │  - Runtime interceptor (RouteInterceptor) & decorator      │
-└────────────────────────────┬─────────────────────────────┘
+└────────────────────────────┬───────────────────────────────┘
                              │ (KSP compile-time scanning)
-┌────────────────────────────▼─────────────────────────────┐
-│           Pure annotation module (:nav-annotation)        │
-│  - @Screen (pure compile-time route marker)              │
-│  - @Required (required-parameter validation marker)      │
-└────────────────────────────┬─────────────────────────────┘
+┌────────────────────────────▼───────────────────────────────┐
+│           Pure annotation module (:nav-annotation)         │
+│  - @Screen (pure compile-time route marker)                │
+│  - @Required (required-parameter validation marker)        │
+└────────────────────────────┬───────────────────────────────┘
                              │ (low-level delegation)
-┌────────────────────────────▼─────────────────────────────┐
-│         Android official engine (androidx.navigation3)    │
-│  - NavDisplay (scene rendering / multi-pane / restore)    │
-│  - NavEntry (official ViewModelStoreOwner & persistence)  │
-└──────────────────────────────────────────────────────────┘
+┌────────────────────────────▼───────────────────────────────┐
+│         Android official engine (androidx.navigation3)     │
+│  - NavDisplay (scene rendering / multi-pane / restore)     │
+│  - NavEntry (official ViewModelStoreOwner & persistence)   │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -458,10 +458,10 @@ class PayServiceImpl : PayService {
 | API | Description |
 | :--- | :--- |
 | `NavCenter.init(context)` | Bind the global context |
-| `NavCenter.saveState(bundle)` | Serialize the current backstack into a Bundle (for process death) 🆕 |
-| `NavCenter.restoreState(bundle)` | Restore the pre-kill page stack from a Bundle, returns the restore result 🆕 |
-| `NavCenter.handleIntent(intent)` | Parse & dispatch Scheme / DeepLink / push navigation in one step 🆕 |
-| `NavCenter.setIntentResolver(resolver)` | Set a custom DeepLink / push parsing strategy 🆕 |
+| `NavCenter.saveState(bundle)` | Serialize the current backstack into a Bundle (for process death) |
+| `NavCenter.restoreState(bundle)` | Restore the pre-kill page stack from a Bundle, returns the restore result |
+| `NavCenter.handleIntent(intent)` | Parse & dispatch Scheme / DeepLink / push navigation in one step |
+| `NavCenter.setIntentResolver(resolver)` | Set a custom DeepLink / push parsing strategy |
 | `NavCenter.setFallbackRoute(route)` | Configure the 404 fallback route |
 | `NavCenter.addRouteHandler(handler)` | Register a chain-of-responsibility pre-handler (e.g. WebViewHandler) |
 | `NavCenter.navigate(dest, navOptions)` | Strong-typed navigation (SingleTop / PopUpTo / ClearTask), chainable |
@@ -475,14 +475,14 @@ class PayServiceImpl : PayService {
 | `NavCenter.popWithResult(key, value)` | Pop with a result, returns a boolean synchronously |
 | `NavCenter.getResult<T>(key)` | Reactively observe the returned result inside a Composable (nullable-safe) |
 | `NavCenter.Render()` | Official Navigation 3 UI rendering entry point |
-| `NavCenter.getService<T>()` | Discover a UI-less service instance by interface Class across modules (zero reflection) 🆕 |
-| `NavCenter.getService<T>(path)` | Discover a service instance by Path string across modules 🆕 |
-| `NavCenter.addPathReplaceService(service)` | Register a dynamic path/URL rewriting strategy (A/B testing, dynamic mapping) 🆕 |
-| `NavCenter.navigate(dest) { greenChannel = true }` | Enable green channel to skip all interceptors and force-navigate to the target 🆕 |
-| `@Service(contract = KClass, path = "")` | Cross-module service exposure annotation; KSP auto-registers the implementation at compile time 🆕 |
-| `NavCenter.showOverlay { content }` | Stack any Compose layer above the current active page (keeping the background visible) 🆕 |
-| `NavCenter.dismissOverlay()` | Dismiss the current global Overlay layer 🆕 |
-| `NavCenter.currentOverlay` | Composable state object of the current layer (for custom rendering) 🆕 |
+| `NavCenter.getService<T>()` | Discover a UI-less service instance by interface Class across modules (zero reflection) |
+| `NavCenter.getService<T>(path)` | Discover a service instance by Path string across modules |
+| `NavCenter.addPathReplaceService(service)` | Register a dynamic path/URL rewriting strategy (A/B testing, dynamic mapping) |
+| `NavCenter.navigate(dest) { greenChannel = true }` | Enable green channel to skip all interceptors and force-navigate to the target |
+| `@Service(contract = KClass, path = "")` | Cross-module service exposure annotation; KSP auto-registers the implementation at compile time |
+| `NavCenter.showOverlay { content }` | Stack any Compose layer above the current active page (keeping the background visible) |
+| `NavCenter.dismissOverlay()` | Dismiss the current global Overlay layer |
+| `NavCenter.currentOverlay` | Composable state object of the current layer (for custom rendering) |
 
 ---
 
