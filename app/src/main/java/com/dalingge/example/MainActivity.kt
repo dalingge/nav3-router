@@ -10,10 +10,12 @@ import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDe
 import com.dalingge.example.ui.theme.Nav3routerTheme
 import com.dalingge.nav.generated.initUser
 import com.dalingge.nav.generated.initDalingge
+import com.dalingge.nav.generated.initPay
 import com.dalingge.nav.runtime.DefaultSlideTransition
 import com.dalingge.nav.runtime.NavCenter
 import com.dalingge.nav.runtime.handler.BrowserHandler
 import com.dalingge.nav.runtime.handler.WebViewHandler
+import com.dalingge.pay.ABTestPathReplacer
 
 class MainActivity : ComponentActivity() {
 
@@ -27,10 +29,12 @@ class MainActivity : ComponentActivity() {
             .addRouteHandler(BrowserHandler(this))
             .setDefaultTransition(DefaultSlideTransition()) // 注册全局动画
             .addGlobalInterceptor(AppLoginInterceptor())   // 注册全局拦截器
+            .addPathReplaceService(ABTestPathReplacer())  // 支持注册多个重写策略链
             .addEntryDecorator { rememberViewModelStoreNavEntryDecorator() }
             .addEntryDecorator(AnalyticsEntryDecorator())//传入自定义的曝光埋点与 onPop 清理装饰器
             .initDalingge()
             .initUser() //注册 User 模块路由
+            .initPay() // 注册 pay 模块路由
 
         // 解耦恢复逻辑三部曲：
         // 优先尝试从进程被杀恢复 (savedInstanceState)

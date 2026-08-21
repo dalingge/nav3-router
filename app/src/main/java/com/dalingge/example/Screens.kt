@@ -16,6 +16,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dalingge.common.PayService
 import com.dalingge.example.ui.theme.Nav3routerTheme
 import com.dalingge.nav.annotation.Screen
 import com.dalingge.nav.runtime.NavCenter
@@ -69,6 +70,15 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+
+        Button(onClick = {
+            val payService = NavCenter.getService<PayService>()
+            payService?.pay("10086", 199.0)
+        }) {
+            Text("跨模块服务请求")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Button(onClick = {
             NavCenter.navigate("https://www.app.cn/activity/promo?id=100")

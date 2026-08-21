@@ -309,6 +309,88 @@ fun testOpenDetail() {
 
 ---
 
+## 🚀 Enterprise Advanced Features
+
+### 1. Cross-module UI-less service discovery (`@Service` & `IService`)
+
+For **UI-less business-logic decoupling** in large componentized projects (e.g. `:feature-shop` needs to call the payment service in `:feature-pay` without a direct Gradle dependency between the two), the framework provides a **zero-reflection** service discovery mechanism auto-registered via KSP.
+
+**A. Define the service interface in a common base library:**
+
+```kotlin
+// Define the interface in the common base module (:core-common); it must extend IService
+interface PayService : IService {
+    fun pay(orderId: String, amount: Double): Boolean
+}
+```
+
+**B. Expose the implementation with `@Service` in the providing module:**
+
+```kotlin
+// Implement the interface in the business module (:feature-pay) and mark it with @Service
+// contract declares the interface exposed externally; path is an optional string identifier
+@Service(contract = PayService::class, path = "pay/service")
+class PayServiceImpl : PayService {
+    override fun pay(orderId: String, amount: Double): Boolean {
+        Log.d("PayService", "Charging order $orderId for $amount CNY")
+        return true
+    }
+}
+```
+
+**C. Fetch and call it from any business module (compile-time strong typing via KSP, zero reflection):**
+
+```kotlin
+// Option 1: fetch by interface Class (recommended)
+val payService = NavCenter.getService<PayService>()
+payService?.pay(orderId = "10086", amount = 199.0)
+
+// Option 2: fetch by Path string
+val payServiceByPath = NavCenter.getService<PayService>("pay/service")
+payServiceByPath?.pay(orderId = "10086", amount = 199.0)
+```
+
+### 2. Dynamic path / URL rewriting (`PathReplaceService`)
+
+For **A/B testing**, **online URL error correction**, or **server-pushed route mapping**. Rewrites the original URL at the very front of route dispatch:
+
+**A. Implement the `PathReplaceService` interface:**
+
+```kotlin
+// A/B test dynamic path replacer
+class ABTestPathReplacer : PathReplaceService {
+    override fun replace(rawUrl: String): String {
+        // If the raw URL is "pay/detail" and the user is in the A/B test group, rewrite to the 2.0 detail screen
+        if (rawUrl == "pay/detail" && ABTestEngine.isGroupA()) {
+            return "pay/detail_v2"
+        }
+        return rawUrl
+    }
+}
+```
+
+**B. Register it in the `NavCenter` fluent chain (multiple rewriting strategies are supported):**
+
+```kotlin
+NavCenter
+    .addPathReplaceService(ABTestPathReplacer()) // supports registering multiple strategies
+    .initUser()
+    .navigate(HomeScreenDestination())
+```
+
+### 3. Green channel bypass (`greenChannel = true`)
+
+For emergency rescue, elevated-privilege shortcuts, or specific business scenarios, if you need to **force-skip all global and per-route interceptors (`RouteInterceptor`)**, enable the `greenChannel` option when navigating:
+
+```kotlin
+// Force-navigate to the detail screen, skipping the global login interceptor and VIP permission interceptor
+NavCenter.navigate(DetailScreenDestination(detailId = 100, user = user)) {
+    greenChannel = true // enable green channel to bypass interception
+}
+```
+
+---
+
 ## 📖 API Quick Reference
 
 | API | Description |
@@ -331,6 +413,11 @@ fun testOpenDetail() {
 | `NavCenter.popWithResult(key, value)` | Pop with a result, returns a boolean synchronously |
 | `NavCenter.getResult<T>(key)` | Reactively observe the returned result inside a Composable (nullable-safe) |
 | `NavCenter.Render()` | Official Navigation 3 UI rendering entry point |
+| `NavCenter.getService<T>()` | Discover a UI-less service instance by interface Class across modules (zero reflection) 🆕 |
+| `NavCenter.getService<T>(path)` | Discover a service instance by Path string across modules 🆕 |
+| `NavCenter.addPathReplaceService(service)` | Register a dynamic path/URL rewriting strategy (A/B testing, dynamic mapping) 🆕 |
+| `NavCenter.navigate(dest) { greenChannel = true }` | Enable green channel to skip all interceptors and force-navigate to the target 🆕 |
+| `@Service(contract = KClass, path = "")` | Cross-module service exposure annotation; KSP auto-registers the implementation at compile time 🆕 |
 
 ---
 

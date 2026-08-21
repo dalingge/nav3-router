@@ -60,6 +60,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     api(project(":user"))
+    api(project(":pay"))
 
     api(project(":nav-runtime"))
     ksp(project(":nav-compiler"))

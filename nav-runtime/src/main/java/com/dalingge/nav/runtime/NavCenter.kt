@@ -14,6 +14,7 @@ import androidx.navigation3.ui.NavDisplay
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import androidx.core.net.toUri
 
 /**
  *
@@ -43,12 +44,15 @@ object NavCenter : Navigator {
     //  统一使用 CopyOnWriteArrayList 确保 100% 线程安全
     private val routeHandlers = CopyOnWriteArrayList<RouteHandler>()
     private val globalInterceptors = CopyOnWriteArrayList<RouteInterceptor>()
+    private val pathReplaceServices = CopyOnWriteArrayList<PathReplaceService>()
     private val decoratorFactories = CopyOnWriteArrayList<@Composable () -> NavEntryDecorator<NavDestination>>()
 
     @Volatile
     private var globalTransition: NavTransition = DefaultSlideTransition()
+
     @Volatile
     private var fallbackRoute: String? = null
+
     // 注入解耦的 Intent 解析策略，默认使用 DefaultIntentResolver
     @Volatile
     private var intentResolver: IntentResolver = DefaultIntentResolver()
@@ -63,7 +67,7 @@ object NavCenter : Navigator {
     }
 
     /** 解耦接管系统 Intent / Scheme / 推送通知跳转 */
-    fun handleIntent(intent:  Intent?, builder: (NavOptionsBuilder.() -> Unit)? = null): Boolean {
+    fun handleIntent(intent: Intent?, builder: (NavOptionsBuilder.() -> Unit)? = null): Boolean {
         val targetUrl = intentResolver.resolve(intent)
         if (!targetUrl.isNullOrEmpty()) {
             navigate(targetUrl, builder)
@@ -136,6 +140,22 @@ object NavCenter : Navigator {
         return this
     }
 
+    // 跨模块服务获取（按 Class 类型获取）
+    inline fun <reified T : Any> getService(): T? {
+        return NavServiceRegistry.get(T::class.java)
+    }
+
+    // 跨模块服务获取（按 Path 路径获取）
+    inline fun <reified T : Any> getService(path: String): T? {
+        return NavServiceRegistry.getByPath(path)
+    }
+
+    // 链式注册动态路径替换服务
+    fun addPathReplaceService(service: PathReplaceService): NavCenter {
+        this.pathReplaceServices.add(service)
+        return this
+    }
+
     override fun navigate(destination: NavDestination, builder: (NavOptionsBuilder.() -> Unit)?): NavCenter {
         navigate(destination.toUrl(), builder)
         return this
@@ -147,6 +167,12 @@ object NavCenter : Navigator {
         // 🟢 主线程绝对同步且原子化执行，零 runBlocking，零 ANR 风险
         navLock.withLock {
             var currentUrl = url
+
+            // 最前端执行动态 Path / URL 替换服务链
+            for (replacer in pathReplaceServices) {
+                currentUrl = replacer.replace(currentUrl)
+            }
+
             var redirectCount = 0
             val maxRedirects = 10
             var targetMeta: RouteMeta? = null
@@ -154,7 +180,7 @@ object NavCenter : Navigator {
 
             // 同步 Redirect 循环
             while (redirectCount <= maxRedirects) {
-                val uri = Uri.parse(currentUrl)
+                val uri = currentUrl.toUri()
                 finalUri = uri
 
                 //  责任链前置处理
@@ -181,36 +207,40 @@ object NavCenter : Navigator {
                     break
                 }
 
-                //  全局拦截器链 (纯同步极其迅速)
-                var hasRedirect = false
-                for (interceptor in globalInterceptors) {
-                    when (val result = interceptor.intercept(currentUrl)) {
-                        is InterceptResult.Proceed -> continue
-                        is InterceptResult.Redirect -> {
-                            currentUrl = result.targetUrl
-                            hasRedirect = true
-                            redirectCount++
-                            break
-                        }
-                        is InterceptResult.Abort -> return@withLock
-                    }
-                }
-                if (hasRedirect) continue
+                if (!options.greenChannel) {
+                    //  全局拦截器链 (纯同步极其迅速)
+                    var hasRedirect = false
+                    for (interceptor in globalInterceptors) {
+                        when (val result = interceptor.intercept(currentUrl)) {
+                            is InterceptResult.Proceed -> continue
+                            is InterceptResult.Redirect -> {
+                                currentUrl = result.targetUrl
+                                hasRedirect = true
+                                redirectCount++
+                                break
+                            }
 
-                //  路由私有拦截器链 (纯同步)
-                for (interceptor in meta.interceptors) {
-                    when (val result = interceptor.intercept(currentUrl)) {
-                        is InterceptResult.Proceed -> continue
-                        is InterceptResult.Redirect -> {
-                            currentUrl = result.targetUrl
-                            hasRedirect = true
-                            redirectCount++
-                            break
+                            is InterceptResult.Abort -> return@withLock
                         }
-                        is InterceptResult.Abort -> return@withLock
                     }
+                    if (hasRedirect) continue
+
+                    //  路由私有拦截器链 (纯同步)
+                    for (interceptor in meta.interceptors) {
+                        when (val result = interceptor.intercept(currentUrl)) {
+                            is InterceptResult.Proceed -> continue
+                            is InterceptResult.Redirect -> {
+                                currentUrl = result.targetUrl
+                                hasRedirect = true
+                                redirectCount++
+                                break
+                            }
+
+                            is InterceptResult.Abort -> return@withLock
+                        }
+                    }
+                    if (hasRedirect) continue
                 }
-                if (hasRedirect) continue
 
                 targetMeta = meta
                 break
@@ -227,21 +257,24 @@ object NavCenter : Navigator {
                 return@withLock
             }
 
-            val queryParams = finalUri.queryParameterNames.associateWith { name ->
-                finalUri.getQueryParameter(name) ?: ""
-            }
+//            val queryParams = finalUri.queryParameterNames.associateWith { name ->
+//                finalUri.getQueryParameter(name) ?: ""
+//            }
 
-            val destination = try {
-                targetMeta.factory(queryParams)
-            } catch (e: Exception) {
-                Log.e("NavCenter", "❌ Failed to instantiate destination for route: ${targetMeta.route}", e)
-                return@withLock
-            }
+//            val destination = try {
+//                targetMeta.factory(queryParams)
+//            } catch (e: Exception) {
+//                Log.e("NavCenter", "❌ Failed to instantiate destination for route: ${targetMeta.route}", e)
+//                return@withLock
+//            }
 
             //  栈控制策略
             val backstack = primaryStack.backstack
             if (options.clearTask) {
                 backstack.clear()
+            } else if (options.popCurrent && backstack.isNotEmpty()) {
+                // 快捷弹出当前栈顶页面（关闭当前页）
+                backstack.removeAt(backstack.lastIndex)
             } else if (options.popUpToRoute != null) {
                 val index = backstack.indexOfLast { it.route == options.popUpToRoute }
                 if (index != -1) {
@@ -256,7 +289,7 @@ object NavCenter : Navigator {
                 return@withLock
             }
 
-            backstack.add(destination)
+            backstack.add(targetMeta.factory(finalUri.queryParameterNames.associateWith { finalUri.getQueryParameter(it) ?: "" }))
         }
 
         return this

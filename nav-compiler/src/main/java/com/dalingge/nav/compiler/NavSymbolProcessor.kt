@@ -3,6 +3,7 @@ package com.dalingge.nav.compiler
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.ksp.toClassName
 import com.squareup.kotlinpoet.ksp.toTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
 
@@ -20,15 +21,18 @@ class NavSymbolProcessor(
 ) : SymbolProcessor {
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
-        val symbols = resolver.getSymbolsWithAnnotation("com.dalingge.nav.annotation.Screen")
+        val screenSymbols = resolver.getSymbolsWithAnnotation("com.dalingge.nav.annotation.Screen")
             .filterIsInstance<KSFunctionDeclaration>()
             .toList()
 
-        if (symbols.isEmpty()) return emptyList()
+        val serviceSymbols = resolver.getSymbolsWithAnnotation("com.dalingge.nav.annotation.Service")
+            .filterIsInstance<KSClassDeclaration>().toList()
 
-        //  1. 编译期查重检测 (Duplicate Route Detection)
+        if (screenSymbols.isEmpty() && serviceSymbols.isEmpty()) return emptyList()
+
+        //  编译期查重检测 (Duplicate Route Detection)
         val routeMap = mutableMapOf<String, KSFunctionDeclaration>()
-        symbols.forEach { function ->
+        screenSymbols.forEach { function ->
             val annotation = function.annotations.firstOrNull { it.shortName.asString() == "Screen" } ?: return@forEach
             val route = annotation.arguments.firstOrNull { it.name?.asString() == "route" }?.value as? String ?: ""
 
@@ -43,7 +47,7 @@ class NavSymbolProcessor(
             }
         }
 
-        val moduleNameFromPkg = symbols.firstOrNull()?.packageName?.asString()
+        val moduleNameFromPkg = screenSymbols.firstOrNull()?.packageName?.asString()
             ?.split(".")
             ?.dropLast(1)
             ?.lastOrNull() ?: ""
@@ -54,12 +58,12 @@ class NavSymbolProcessor(
         val initFuncName = if (capitalizedModuleName.isNotEmpty()) "init${capitalizedModuleName}" else "initNavRegistry"
         val fileName = if (capitalizedModuleName.isNotEmpty()) "${capitalizedModuleName}NavRegistryInit" else "NavRegistryInit"
 
-        val sourceFiles = symbols.mapNotNull { it.containingFile }.toTypedArray()
+        val sourceFiles = screenSymbols.mapNotNull { it.containingFile }.toTypedArray()
         val dependencies = Dependencies(aggregating = true, *sourceFiles)
 
         val registryInitBlock = CodeBlock.builder()
 
-        symbols.forEach { function ->
+        screenSymbols.forEach { function ->
             val annotation = function.annotations.firstOrNull { it.shortName.asString() == "Screen" } ?: return@forEach
             val route = annotation.arguments.firstOrNull { it.name?.asString() == "route" }?.value as? String ?: ""
             val needLogin = annotation.arguments.firstOrNull { it.name?.asString() == "needLogin" }?.value as? Boolean ?: false
@@ -75,6 +79,22 @@ class NavSymbolProcessor(
 
             generateDestinationClass(packageName, destClassName, route, routeParams, dependencies)
             buildRegistryStatement(registryInitBlock, packageName, destClassName, route, needLogin, function, routeParams, annotation, logger)
+        }
+
+        //  自动生成服务发现注册代码
+        serviceSymbols.forEach { classDecl ->
+            val annotation = classDecl.annotations.first { it.shortName.asString() == "Service" }
+            val contractType = annotation.arguments.first { it.name?.asString() == "contract" }.value as KSType
+            val path = annotation.arguments.firstOrNull { it.name?.asString() == "path" }?.value as? String ?: ""
+
+            val contractFQCN = contractType.toTypeName()
+            val implFQCN = classDecl.toClassName()
+
+            registryInitBlock.addStatement(
+                "com.dalingge.nav.runtime.NavServiceRegistry.register(%T::class.java, %T(), %S)",
+                contractFQCN, implFQCN, path
+            )
+            logger.info("Registered Service: ${contractFQCN} -> ${implFQCN}")
         }
 
         generateRegistryFile(fileName, initFuncName, registryInitBlock.build(), dependencies, logger)

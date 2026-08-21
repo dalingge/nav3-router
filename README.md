@@ -309,6 +309,88 @@ fun testOpenDetail() {
 
 ---
 
+## 🚀 高级功能
+
+### 1. 跨模块无 UI 服务发现 (`@Service` & `IService`)
+
+为支持大型组件化项目中**无 UI 业务逻辑的解耦调用**（例如 `:feature-shop` 需要调用 `:feature-pay` 模块的支付服务，但两个模块之间不能有直接的 Gradle 依赖），框架提供基于 KSP 自动注册的 **零反射** 服务发现机制。
+
+**A. 在公共基础库中定义服务接口：**
+
+```kotlin
+// 在公共基础模块 (:core-common) 中定义接口，需继承 IService
+interface PayService : IService {
+    fun pay(orderId: String, amount: Double): Boolean
+}
+```
+
+**B. 在服务实现模块中使用 `@Service` 标注暴露：**
+
+```kotlin
+// 在业务实现模块 (:feature-pay) 中实现接口并用 @Service 标注
+// contract 指定暴露给外部的接口，path 为可选的字符串路径标识
+@Service(contract = PayService::class, path = "pay/service")
+class PayServiceImpl : PayService {
+    override fun pay(orderId: String, amount: Double): Boolean {
+        Log.d("PayService", "正为订单 $orderId 扣款 $amount 元")
+        return true
+    }
+}
+```
+
+**C. 在任意业务模块中无耦合获取并调用（KSP 编译期强类型绑定，0 反射）：**
+
+```kotlin
+// 方式 1：通过接口 Class 获取（推荐）
+val payService = NavCenter.getService<PayService>()
+payService?.pay(orderId = "10086", amount = 199.0)
+
+// 方式 2：通过 Path 字符串路径获取
+val payServiceByPath = NavCenter.getService<PayService>("pay/service")
+payServiceByPath?.pay(orderId = "10086", amount = 199.0)
+```
+
+### 2. 动态路径 / URL 重写服务 (`PathReplaceService`)
+
+用于 **A/B 测试**、**在线 URL 动态纠错** 或 **服务端下发路由映射**。在路由发起的最前端对原始 URL 进行规则重写：
+
+**A. 实现 `PathReplaceService` 接口：**
+
+```kotlin
+// A/B 测试动态路径替换器
+class ABTestPathReplacer : PathReplaceService {
+    override fun replace(rawUrl: String): String {
+        // 若原始 URL 为 "pay/detail" 且命中 A/B 测试人群，重写为 2.0 版详情页
+        if (rawUrl == "pay/detail" && ABTestEngine.isGroupA()) {
+            return "pay/detail_v2"
+        }
+        return rawUrl
+    }
+}
+```
+
+**B. 在 `NavCenter` 链式配置中注册（支持注册多个重写策略链）：**
+
+```kotlin
+NavCenter
+    .addPathReplaceService(ABTestPathReplacer()) // 支持注册多个重写策略
+    .initUser()
+    .navigate(HomeScreenDestination())
+```
+
+### 3. 绿色通道越过拦截 (`greenChannel = true`)
+
+在紧急救援、高级权限直达或特定业务场景下，如果需要**强制跳过所有全局与私有拦截器 (`RouteInterceptor`)**，可以在跳转时开启 `greenChannel` 选项：
+
+```kotlin
+// 强行直达详情页，跳过全局登录拦截器与 VIP 权限拦截器
+NavCenter.navigate(DetailScreenDestination(detailId = 100, user = user)) {
+    greenChannel = true // 开启绿色通道，免防拦截
+}
+```
+
+---
+
 ## 📖 API 速查表
 
 | API | 功能描述 |
@@ -331,6 +413,11 @@ fun testOpenDetail() {
 | `NavCenter.popWithResult(key, value)` | 携带结果出栈，同步返回布尔状态 |
 | `NavCenter.getResult<T>(key)` | Composable 内部响应式监听回传结果（支持可空 `null` 结果） |
 | `NavCenter.Render()` | 官方 Navigation 3 UI 渲染总入口 |
+| `NavCenter.getService<T>()` | 跨模块按接口 Class 发现并获取无 UI 服务实例（0 反射） 🆕 |
+| `NavCenter.getService<T>(path)` | 跨模块按 Path 字符串发现并获取服务实例 🆕 |
+| `NavCenter.addPathReplaceService(service)` | 注册动态路径/URL 重写策略（用于 A/B 测试、动态映射） 🆕 |
+| `NavCenter.navigate(dest) { greenChannel = true }` | 开启绿色通道，跳转时跳过所有拦截器强行直达目标页 🆕 |
+| `@Service(contract = KClass, path = "")` | 跨模块服务暴露注解，KSP 编译期自动注册服务实现 🆕 |
 
 ---
 

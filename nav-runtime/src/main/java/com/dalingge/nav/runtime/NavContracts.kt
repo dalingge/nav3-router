@@ -25,12 +25,16 @@ interface NavDestination {
  * launchSingleTop：如果栈顶已经是该页面，不再重复创建。
  * popUpTo(route, inclusive)：跳转时清空指定目标之上的所有页面（例如：登录成功跳转首页，清空登录页和注册页）。
  * clearTask：清空整个栈（例如：退出登录重置到登录页
+ * popCurrent:是否在跳转前顺手弹出/关闭当前栈顶页面
+ * greenChannel :绿色通道：跳过所有拦截器直达
  */
 data class NavOptions(
     val launchSingleTop: Boolean = false,
     val popUpToRoute: String? = null,
     val inclusive: Boolean = false,
-    val clearTask: Boolean = false
+    val clearTask: Boolean = false,
+    val popCurrent: Boolean = false,
+    val greenChannel: Boolean = false,
 )
 
 class NavOptionsBuilder {
@@ -38,8 +42,9 @@ class NavOptionsBuilder {
     var popUpToRoute: String? = null
     var inclusive: Boolean = false
     var clearTask: Boolean = false
-
-    fun build() = NavOptions(launchSingleTop, popUpToRoute, inclusive, clearTask)
+    var popCurrent: Boolean = false
+    var greenChannel: Boolean = false
+    fun build() = NavOptions(launchSingleTop, popUpToRoute, inclusive, clearTask, popCurrent, greenChannel)
 }
 
 /**
@@ -61,5 +66,5 @@ data class RouteMeta(
     val factory: (Map<String, String>) -> NavDestination,
     val content: @Composable (NavDestination) -> Unit,
     val interceptors: List<RouteInterceptor> = emptyList(),
-    val transition: NavTransition? = null
+    val transition: NavTransition? = null,
 )
